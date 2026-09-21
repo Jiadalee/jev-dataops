@@ -1,0 +1,15 @@
+.git
+.venv
+.env
+.jev-dataops
+__pycache__
+.pytest_cache
+dist
+build
+*.egg-info
+runs
+uploads
+checkpoints
+*.sqlite3*
+*.safetensors
+*.bin

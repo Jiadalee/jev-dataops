@@ -1,0 +1,9 @@
+include LICENSE README.md CONTRIBUTING.md SECURITY.md Dockerfile compose.yaml
+recursive-include docs *.md
+recursive-include examples *.jsonl
+recursive-include scripts *.py
+recursive-include tests *.py
+recursive-include jev_dataops/static *.html *.css *.js
+recursive-include jev_dataops/rubrics *.json
+recursive-include jev_dataops/examples *.jsonl
+global-exclude __pycache__ *.py[cod] *.sqlite3* .env *.safetensors

@@ -1,0 +1,16 @@
+services:
+  workbench:
+    build: .
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      JEV_API_TOKEN: ${JEV_API_TOKEN:?Set a strong JEV_API_TOKEN before starting Compose}
+      JEV_ALLOWED_HOSTS: ${JEV_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
+      JEV_MAX_UPLOAD_MB: ${JEV_MAX_UPLOAD_MB:-1024}
+    volumes:
+      - jev-data:/data
+    restart: unless-stopped
+volumes:
+  jev-data:
