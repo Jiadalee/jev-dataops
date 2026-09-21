@@ -205,6 +205,41 @@ class APIAccessTests(unittest.TestCase):
                 response = client.get("/api/health")
                 self.assertEqual(response.status_code, 403)
 
+    def test_proxied_loopback_traffic_without_token_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"JEV_API_TOKEN": ""}):
+            with TestClient(create_app(directory), client=("127.0.0.1", 54321)) as client:
+                self.assertEqual(client.get("/api/health").status_code, 200)
+                for header in ("X-Forwarded-For", "X-Real-IP", "Forwarded"):
+                    response = client.get("/api/health", headers={header: "198.51.100.9"})
+                    self.assertEqual(response.status_code, 403, header)
+                    self.assertIn("JEV_API_TOKEN", response.text)
+
+
+class CLITests(unittest.TestCase):
+    def test_env_file_fills_missing_variables_only(self):
+        from jev_dataops.cli import load_env_file
+
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"KEEP_ME": "original"}):
+            os.environ.pop("JEV_TEST_KEY", None)
+            path = os.path.join(directory, ".env")
+            with open(path, "w", encoding="utf-8") as stream:
+                stream.write("# comment\nexport JEV_TEST_KEY='sk-test-value'\nKEEP_ME=overwritten\n\nMALFORMED LINE\n")
+            self.assertEqual(load_env_file(path), 1)
+            self.assertEqual(os.environ["JEV_TEST_KEY"], "sk-test-value")
+            self.assertEqual(os.environ["KEEP_ME"], "original")
+            os.environ.pop("JEV_TEST_KEY", None)
+
+    def test_summary_mentions_cost_and_gaps(self):
+        from jev_dataops.cli import summarize
+
+        report = {"status": "complete", "mode": "jev_api", "counts": {"total": 10, "keep": 6, "review": 3, "reject": 1, "duplicates": 0},
+                  "api_requests": 12, "cache_hits": 0, "usage": {"cost": 0.00123}, "models": {"jev-1.13": 10},
+                  "unevaluated": 1, "unevaluated_fraction": 0.1, "error_count": 1, "errors": [{"line": 3, "error": "invalid_response"}],
+                  "notice": "1 of 10 rows were not evaluated by Jev."}
+        text = summarize(report)
+        for fragment in ("keep 6", "12 requests", "$0.0012", "jev-1.13", "1 rows not evaluated", "invalid_response", "not evaluated by Jev"):
+            self.assertIn(fragment, text)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -141,6 +141,10 @@ def create_app(data_dir=None):
                     return JSONResponse({"detail": "API token required"}, status_code=401)
             elif request.client and request.client.host not in {"127.0.0.1", "::1", "testclient"}:
                 return JSONResponse({"detail": "Remote access requires JEV_API_TOKEN"}, status_code=403)
+            elif any(header in request.headers for header in ("x-forwarded-for", "x-real-ip", "forwarded")):
+                # Loopback traffic that a reverse proxy relayed from elsewhere is remote
+                # access; the loopback exemption above is only for the operator's own browser.
+                return JSONResponse({"detail": "Proxied access requires JEV_API_TOKEN"}, status_code=403)
             if request.method not in {"GET", "HEAD", "OPTIONS"}:
                 origin = request.headers.get("origin")
                 if origin and urlsplit(origin).netloc != request.headers.get("host"):
