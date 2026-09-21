@@ -33,17 +33,27 @@ class RunConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
     dataset_id: str = Field(pattern=r"^[a-f0-9]{32}$")
     provider: Literal["demo", "openrouter", "typesafe"] = "demo"
+    # A pinned Jev version such as "typesafe/jev-1.13-20260917"; the provider's
+    # floating alias when unset. Pinning keeps a run's cache to one model.
+    model: str | None = Field(default=None, min_length=1, max_length=200, pattern=r"^[A-Za-z0-9._~/:-]+$")
     confidence: float = Field(default=0.85, ge=0, le=1, allow_inf_nan=False)
     concurrency: int = Field(default=4, ge=1, le=16)
     max_requests: int = Field(default=1000, ge=1, le=1000000)
     rubric: Literal["general", "finance", "code"] = "general"
+    min_chars: int = Field(default=8, ge=1, le=MAX_LINE)
+    max_chars: int = Field(default=32000, ge=1, le=MAX_LINE)
     trainer: Literal["demo", "huggingface"] = "demo"
     auto_train: bool = True
     epochs: int = Field(default=1, ge=1, le=10)
     max_steps: int = Field(default=20, ge=1, le=10000)
+    batch_size: int = Field(default=4, ge=1, le=32)
     learning_rate: float = Field(default=0.0002, ge=0.0000001, le=0.01, allow_inf_nan=False)
     max_seq_length: int = Field(default=256, ge=32, le=4096)
     seed: int = Field(default=42, ge=0, le=2147483647)
+    lora_r: int = Field(default=8, ge=1, le=256)
+    lora_alpha: int = Field(default=16, ge=1, le=1024)
+    # "answer" masks the prompt so only the response is learned; "full" is plain causal SFT.
+    loss_mask: Literal["answer", "full"] = "answer"
 
 
 def inspect_dataset(path: Path):
@@ -211,7 +221,7 @@ def create_app(data_dir=None):
         dataset = store.get("dataset", config.dataset_id)
         if not dataset:
             raise HTTPException(404, "Dataset not found")
-        values = config.model_dump(exclude={"dataset_id"})
+        values = config.model_dump(exclude={"dataset_id"}, exclude_none=True)
         values["base_model"] = os.environ.get("JEV_BASE_MODEL", "HuggingFaceTB/SmolLM2-135M")
         ensure_runtime(values)
         try:

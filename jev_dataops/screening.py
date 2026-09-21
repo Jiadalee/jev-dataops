@@ -11,12 +11,20 @@ from pathlib import Path
 import re
 import sqlite3
 import threading
+import time
 
-from .jev import JevAPIError, JevClient, MODELS, digest, validate_response
+from .jev import JevAPIError, JevClient, MODELS, digest, effective_thresholds, validate_response
 
-ENGINE_VERSION = "1"
+ENGINE_VERSION = "2"
 MAX_ROW_BYTES = 1024 * 1024
 STATE_FIELDS = frozenset({"text", "messages", "instruction", "input", "output", "prompt", "response"})
+# Cache and audit rows are committed in groups rather than one fsync per row. A
+# crash loses at most this many cached decisions, which the retry then re-asks for.
+COMMIT_EVERY_ROWS = 500
+COMMIT_EVERY_SECONDS = 1.0
+# Above this share of rows that Jev never answered for (malformed responses, row-level
+# transport failures), a "complete" run is not a sound basis for automatic training.
+MAX_UNEVALUATED_FRACTION = 0.05
 
 
 def normalize_record(record):
@@ -75,6 +83,17 @@ def state_text(state):
     if "messages" in state:
         return "\n".join(message["content"] for message in state["messages"])
     return "\n".join(state[key] for key in ("text", "instruction", "input", "output", "prompt", "response") if key in state)
+
+
+def state_key(state):
+    """Hash for dedupe and the cache: whitespace-collapsed, so two rows that differ only
+    in trailing spaces or line wrapping are one row, the same rule the training split
+    uses to group them."""
+    if "messages" in state:
+        folded = {"messages": [{"role": m["role"], "content": " ".join(m["content"].split())} for m in state["messages"]]}
+    else:
+        folded = {key: " ".join(value.split()) for key, value in state.items()}
+    return digest(folded)
 
 
 def _invalid(line, reason):
@@ -241,8 +260,10 @@ def screen_dataset(input_path: Path, output_dir: Path, config: dict, progress=No
     client = JevClient(cfg["provider"], cfg["max_requests"], cfg["timeout"], cfg["attempts"]) if cfg["provider"] != "demo" else None
     counts = {name: 0 for name in ("total", "keep", "review", "reject", "duplicates")}
     report = {"status": "running", "complete": False, "mode": "demo_rule_based" if client is None else "jev_api", "provider": cfg["provider"],
-              "counts": counts, "processed": 0, "errors": [], "error_count": 0, "config": cfg, "config_hash": config_hash,
+              "counts": counts, "processed": 0, "errors": [], "error_count": 0, "unevaluated": 0, "config": cfg, "config_hash": config_hash,
               "engine_version": ENGINE_VERSION, "dimensions": {}, "api_requests": 0, "cache_hits": 0,
+              "usage": {"input_tokens": 0, "output_tokens": 0, "cost": 0.0}, "models": {},
+              "thresholds": effective_thresholds(rubric, cfg["confidence"]) if client else {},
               "input_exhausted": False, "artifacts": {name: f"{name}.jsonl" for name in ("keep", "review", "reject", "audit")}}
     if client is None:
         report["notice"] = "Demo performs local length, exact-duplicate and email-pattern checks only; no Jev model or semantic quality evaluation is used."
@@ -253,14 +274,22 @@ def screen_dataset(input_path: Path, output_dir: Path, config: dict, progress=No
             return _local_result("review", "cancelled", error="cancelled")
         if client is None:
             return _demo(state)
-        try:
-            response = client({"model": cfg["model"], "state": state, "questions": rubric["questions"]}, cancelled=stopped)
-            return validate_response(response, rubric, cfg["confidence"])
-        except ValueError:
-            return _local_result("review", "invalid_response", error="invalid_response")
-        except JevAPIError as exc:
-            row_failure = exc.category in {"invalid_json", "response_too_large", "invalid_request", "request_too_large"}
-            return _local_result("review", exc.category, error=exc.category, fatal=not row_failure and exc.category != "cancelled")
+        payload = {"model": cfg["model"], "state": state, "questions": rubric["questions"]}
+        detail = None
+        # One malformed answer is asked for again before the row is given up on: Jev's
+        # probabilities are rounded and its output is not deterministic, so a second
+        # answer usually validates. The retry spends one request of the budget.
+        for attempt in range(2):
+            try:
+                response = client(payload, cancelled=stopped)
+                return validate_response(response, rubric, cfg["confidence"])
+            except ValueError as exc:
+                detail = str(exc)[:120]
+            except JevAPIError as exc:
+                row_failure = exc.category in {"invalid_json", "response_too_large", "invalid_request", "request_too_large"}
+                return _local_result("review", exc.category, error=exc.category, unevaluated=True,
+                                     fatal=not row_failure and exc.category != "cancelled")
+        return _local_result("review", "invalid_response", error="invalid_response", detail=detail, unevaluated=True)
 
     with ExitStack() as stack:
         db = sqlite3.connect(destination / "cache.sqlite3")
@@ -277,6 +306,7 @@ def screen_dataset(input_path: Path, output_dir: Path, config: dict, progress=No
         stack.callback(rows.close)
         pending = deque()
         exhausted = False
+        uncommitted, last_commit = 0, time.monotonic()
         while pending or not exhausted:
             while not exhausted and len(pending) < cfg["concurrency"] * 2 and not stopped():
                 try:
@@ -293,7 +323,7 @@ def screen_dataset(input_path: Path, output_dir: Path, config: dict, progress=No
                 else:
                     try:
                         state = normalize_record(record)
-                        state_hash = digest(state)
+                        state_hash = state_key(state)
                         size = len(state_text(state))
                     except (ValueError, UnicodeError, RecursionError) as exc:
                         result = _local_result("review", "invalid_content", error=str(exc)[:120])
@@ -322,36 +352,65 @@ def screen_dataset(input_path: Path, output_dir: Path, config: dict, progress=No
             if isinstance(result, Future):
                 result = result.result()
                 if "error" not in result:
-                    db.execute("INSERT OR REPLACE INTO cache VALUES (?,?,?)", (config_hash, state_hash, json.dumps(result, allow_nan=False)))
+                    # The usage belongs to this run's bill, not to the decision; a cache hit costs nothing.
+                    cached_result = {key: value for key, value in result.items() if key != "usage"}
+                    db.execute("INSERT OR REPLACE INTO cache VALUES (?,?,?)", (config_hash, state_hash, json.dumps(cached_result, allow_nan=False)))
+                for key, value in result.get("usage", {}).items():
+                    report["usage"][key] += value
             if result.get("fatal"):
                 fatal = True
                 stop_event.set()
             if result.get("error"):
                 report["error_count"] += 1
                 if len(report["errors"]) < 20:
-                    report["errors"].append({"line": line, "error": result["error"]})
+                    entry = {"line": line, "error": result["error"]}
+                    if result.get("detail"):
+                        entry["detail"] = result["detail"]
+                    report["errors"].append(entry)
+            if result.get("unevaluated"):
+                report["unevaluated"] += 1
+            if result.get("model"):
+                report["models"][result["model"]] = report["models"].get(result["model"], 0) + 1
             decision = result["decision"]
             counts[decision] += 1
             report["processed"] += 1
             for name, dimension in result["dimensions"].items():
-                aggregate = report["dimensions"].setdefault(name, {"keep": 0, "review": 0, "reject": 0, "evaluated": 0, "confidence_sum": 0})
+                aggregate = report["dimensions"].setdefault(name, {"keep": 0, "review": 0, "reject": 0, "evaluated": 0, "confidence_sum": 0, "probability_sum": 0, "gates": {}})
                 aggregate[dimension["decision"]] += 1
                 aggregate["evaluated"] += 1
                 aggregate["confidence_sum"] += dimension.get("confidence", 0)
+                aggregate["probability_sum"] += dimension.get("probability", 0)
+                if dimension.get("gate"):
+                    aggregate["gates"][dimension["gate"]] = aggregate["gates"].get(dimension["gate"], 0) + 1
             files[decision].write(json.dumps(record, ensure_ascii=False, allow_nan=False) + "\n")
             audit = {"line": line, "state_hash": state_hash, "config_hash": config_hash, "mode": report["mode"], "cache_hit": cache_hit, **result}
             files["audit"].write(json.dumps(audit, ensure_ascii=False, allow_nan=False) + "\n")
-            # Commit each completed result so retrying a failed run can reuse it.
-            db.commit()
+            uncommitted += 1
+            if uncommitted >= COMMIT_EVERY_ROWS or time.monotonic() - last_commit >= COMMIT_EVERY_SECONDS or fatal:
+                db.commit()
+                uncommitted, last_commit = 0, time.monotonic()
             report["api_requests"] = client.requests if client else 0
             if progress:
                 progress({"processed": report["processed"], "counts": dict(counts), "api_requests": report["api_requests"], "cache_hits": report["cache_hits"], "mode": report["mode"]})
         db.commit()
+    if client is not None:
+        client.close()
     report["status"] = "incomplete" if fatal else "cancelled" if user_cancelled() else "complete" if report["input_exhausted"] else "incomplete"
     report["complete"] = report["status"] == "complete"
     report["api_requests"] = client.requests if client else 0
+    report["usage"]["cost"] = round(report["usage"]["cost"], 8)
+    evaluated_rows = report["processed"] - counts["duplicates"]
+    report["unevaluated_fraction"] = round(report["unevaluated"] / evaluated_rows, 4) if evaluated_rows else 0.0
+    # A run that finished the file but has too many rows Jev never answered for is
+    # complete as a file scan and unsound as a basis for training.
+    report["training_ready"] = report["complete"] and report["unevaluated_fraction"] <= MAX_UNEVALUATED_FRACTION
+    if report["complete"] and not report["training_ready"]:
+        report["notice"] = (f"{report['unevaluated']} of {evaluated_rows} rows were not evaluated by Jev "
+                            f"({report['unevaluated_fraction']:.1%}, limit {MAX_UNEVALUATED_FRACTION:.0%}). Retry the run to re-ask for them before training.")
     for dimension in report["dimensions"].values():
-        dimension["mean_confidence"] = dimension.pop("confidence_sum") / dimension["evaluated"] if dimension["evaluated"] else None
+        evaluated = dimension["evaluated"]
+        dimension["mean_confidence"] = dimension.pop("confidence_sum") / evaluated if evaluated else None
+        dimension["mean_probability"] = dimension.pop("probability_sum") / evaluated if evaluated else None
     report_path = destination / "data_report.json"
     temporary = destination / "data_report.json.tmp"
     temporary.write_text(json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8")

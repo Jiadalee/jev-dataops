@@ -82,6 +82,8 @@ class Runner:
                 raise InterruptedError()
             if not report.get("complete", report.get("status") == "complete"):
                 raise ValueError("Screening incomplete. Training was not started. Inspect data_report and retry.")
+            if config["auto_train"] and not report.get("training_ready", True):
+                raise ValueError(report.get("notice") or "Too many rows were not evaluated; training was not started. Retry the run.")
             stage("data_evaluation", "Data report saved. Reviewing retained volume and preparing independent splits.")
             if config["auto_train"]:
                 stage("training", "Training started: " + config["trainer"])
