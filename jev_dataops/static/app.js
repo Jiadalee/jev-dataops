@@ -242,6 +242,27 @@ function renderProgress(run) {
   else $("run-progress").value = run.status === "completed" ? 100 : total > 0 ? Math.min(100, Math.max(0, processed / total * 100)) : 0;
   $("run-progress").setAttribute("aria-label", label);
 }
+function renderScreeningSummary(run) {
+  const report = run.data_report;
+  const summary = $("screening-summary"); const notice = $("screening-notice");
+  summary.hidden = true; notice.hidden = true;
+  if (!report) return;
+  const parts = [];
+  if (report.mode === "jev_api") {
+    parts.push(`${number(report.api_requests || 0)} JEV requests`);
+    if (report.cache_hits) parts.push(`${number(report.cache_hits)} from cache`);
+    const cost = report.usage?.cost;
+    if (finiteNonnegative(cost)) parts.push(`$${cost.toFixed(4)}`);
+    const models = Object.keys(report.models || {});
+    if (models.length) parts.push(models.join(", "));
+    if (report.unevaluated) parts.push(`${number(report.unevaluated)} not evaluated`);
+  } else if (report.mode) {
+    parts.push("Demo rules only, no JEV model");
+  }
+  if (report.counts?.duplicates) parts.push(`${number(report.counts.duplicates)} duplicates (${report.dedupe || "whitespace"} match)`);
+  if (parts.length) { summary.textContent = parts.join(" · "); summary.hidden = false; }
+  if (report.notice && report.complete && report.training_ready === false) { notice.textContent = report.notice; notice.hidden = false; }
+}
 function renderDistribution(run) {
   const categories = [["keep", "Keep"], ["review", "Review"], ["reject", "Reject"]];
   const counts = run.counts || {};
@@ -408,6 +429,7 @@ function renderRun() {
   $("run-error").hidden = !run.error; $("run-error").textContent = run.error || "";
   renderStages(run); renderProgress(run);
   for (const key of ["keep", "review", "reject"]) $( `count-${key}`).textContent = run.counts?.[key] !== undefined ? number(run.counts[key]) : "—";
+  renderScreeningSummary(run);
   renderDistribution(run);
   renderModelReport(run.model_report);
   $("data-report-section").hidden = !run.data_report;
