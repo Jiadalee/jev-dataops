@@ -14,7 +14,9 @@ import socket
 import ssl
 import threading
 import time
-from urllib.parse import urlsplit
+from base64 import b64encode
+from urllib.parse import unquote, urlsplit
+from urllib.request import getproxies, proxy_bypass
 
 ENDPOINTS = {
     "openrouter": "https://openrouter.ai/api/alpha/decisions",
@@ -176,13 +178,41 @@ class JevClient:
         self._host, self._path = parts.hostname, parts.path
         self._port = parts.port or 443
         self._context = ssl.create_default_context()
+        self._proxy = self._proxy_for(self._host)
+
+    @staticmethod
+    def _proxy_for(host):
+        """(proxy_host, proxy_port, tunnel_headers) from HTTPS_PROXY/NO_PROXY, or None.
+
+        The same environment urllib honours, so a workstation behind a corporate
+        proxy screens without extra configuration. The provider is reached through
+        a CONNECT tunnel; TLS still terminates at the provider, never at the proxy.
+        """
+        if proxy_bypass(host):
+            return None
+        url = getproxies().get("https")
+        if not url:
+            return None
+        parts = urlsplit(url if "://" in url else "http://" + url)
+        if not parts.hostname:
+            raise ValueError("HTTPS_PROXY is not a valid URL")
+        headers = {}
+        if parts.username is not None:
+            credentials = unquote(parts.username) + ":" + unquote(parts.password or "")
+            headers["Proxy-Authorization"] = "Basic " + b64encode(credentials.encode("utf-8")).decode("ascii")
+        return parts.hostname, parts.port or 3128, headers
 
     def _connection(self, fresh=False):
         connection = getattr(self._local, "connection", None)
         if connection is None or fresh:
             if connection is not None:
                 connection.close()
-            connection = http.client.HTTPSConnection(self._host, self._port, timeout=self.timeout, context=self._context)
+            if self._proxy:
+                proxy_host, proxy_port, tunnel_headers = self._proxy
+                connection = http.client.HTTPSConnection(proxy_host, proxy_port, timeout=self.timeout, context=self._context)
+                connection.set_tunnel(self._host, self._port, headers=tunnel_headers)
+            else:
+                connection = http.client.HTTPSConnection(self._host, self._port, timeout=self.timeout, context=self._context)
             self._local.connection = connection
         return connection
 

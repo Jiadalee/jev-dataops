@@ -1,6 +1,7 @@
 {
   "name": "code",
   "version": "2",
+  "dedupe": "exact",
   "description": "Conservative software-development training-data screening. This is a screening rubric, not a factual verification service.",
   "questions": {
     "quality": {

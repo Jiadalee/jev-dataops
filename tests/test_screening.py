@@ -133,7 +133,15 @@ class ScreeningTests(unittest.TestCase):
         self.write([{"text": "A useful   training example"}, {"text": " A useful training example \n"}])
         report = self.live()
         self.assertEqual(report["counts"], {"total": 2, "keep": 1, "review": 0, "reject": 1, "duplicates": 1})
+        self.assertEqual(report["dedupe"], "whitespace")
         self.assertEqual(len(FakeClient.calls), 1)
+
+    def test_code_rubric_keeps_whitespace_variants_apart(self):
+        self.write([{"text": "def f():\n    return 1"}, {"text": "def f():\n  return 1"}])
+        report = self.live(rubric="code")
+        self.assertEqual(report["dedupe"], "exact")
+        self.assertEqual(report["counts"]["duplicates"], 0)
+        self.assertEqual(len(FakeClient.calls), 2)
 
     def test_usage_and_models_are_aggregated_but_not_cached(self):
         self.write([{"text": f"Useful unique record number {i}"} for i in range(3)])
@@ -249,6 +257,25 @@ class ScreeningTests(unittest.TestCase):
                 client({"state": {"text": "two"}})
                 self.assertEqual(factory.call_count, 1)
                 self.assertEqual(connection.request.call_count, 2)
+
+    def test_https_proxy_is_used_as_a_connect_tunnel(self):
+        env = {"OPENROUTER_API_KEY": "test-not-secret", "HTTPS_PROXY": "http://user:p%40ss@proxy.corp.example:8080", "NO_PROXY": "internal.example"}
+        with patch.dict(os.environ, env, clear=False):
+            client = JevClient("openrouter", max_requests=10)
+            self.assertEqual(client._proxy[:2], ("proxy.corp.example", 8080))
+            self.assertEqual(client._proxy[2]["Proxy-Authorization"], "Basic dXNlcjpwQHNz")
+            with patch("jev_dataops.jev.http.client.HTTPSConnection") as factory:
+                response = factory.return_value.getresponse.return_value
+                response.status, response.read.return_value, response.getheader.return_value = 200, b'{"model": "m", "answers": {}}', ""
+                client({"state": {"text": "one"}})
+                self.assertEqual(factory.call_args.args[:2], ("proxy.corp.example", 8080))
+                factory.return_value.set_tunnel.assert_called_once_with("openrouter.ai", 443, headers=client._proxy[2])
+
+    def test_no_proxy_without_environment(self):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-not-secret"}, clear=False):
+            for name in ("HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"):
+                os.environ.pop(name, None)
+            self.assertIsNone(JevClient("openrouter")._proxy)
 
     def test_redirects_are_not_followed(self):
         with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-not-secret"}):

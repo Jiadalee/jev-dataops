@@ -198,6 +198,10 @@ def _prepare_splits(source: Path, destination: Path, config: dict, progress: Pro
     try:
         db.execute("PRAGMA cache_size=-8192")
         db.execute("PRAGMA temp_store=FILE")
+        # The index is scratch space deleted at the end of the split; nothing in it
+        # needs to survive a crash, so skip the journal and the fsyncs.
+        db.execute("PRAGMA journal_mode=OFF")
+        db.execute("PRAGMA synchronous=OFF")
         db.executescript("""
             CREATE TABLE nodes (key TEXT PRIMARY KEY, parent TEXT NOT NULL);
             CREATE TABLE records (id INTEGER PRIMARY KEY, node TEXT NOT NULL, payload TEXT NOT NULL,
@@ -404,10 +408,12 @@ def _huggingface(directory: Path, config: dict, progress: Progress, cancelled: C
     # weights stay in float32 (PEFT's default), so the optimiser step is unaffected.
     dtype = torch.bfloat16 if device == "cuda" and torch.cuda.is_bf16_supported() else torch.float32
     loading = {"trust_remote_code": False, "use_safetensors": True, "local_files_only": local_only}
-    try:
-        model = AutoModelForCausalLM.from_pretrained(base_model, dtype=dtype, **loading)
-    except TypeError:  # transformers before 4.56 spells the argument torch_dtype
-        model = AutoModelForCausalLM.from_pretrained(base_model, torch_dtype=dtype, **loading)
+    # transformers renamed torch_dtype to dtype in 4.56; older versions accept the new
+    # spelling without complaint and silently ignore it, so pick by version.
+    import transformers
+    release = tuple(int(part) for part in transformers.__version__.split(".")[:2])
+    loading["dtype" if release >= (4, 56) else "torch_dtype"] = dtype
+    model = AutoModelForCausalLM.from_pretrained(base_model, **loading)
     model.config.pad_token_id = tokenizer.pad_token_id
     model.config.use_cache = False
     model_limit = getattr(model.config, "max_position_embeddings", None)

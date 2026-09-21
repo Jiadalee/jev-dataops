@@ -85,10 +85,16 @@ def state_text(state):
     return "\n".join(state[key] for key in ("text", "instruction", "input", "output", "prompt", "response") if key in state)
 
 
-def state_key(state):
-    """Hash for dedupe and the cache: whitespace-collapsed, so two rows that differ only
-    in trailing spaces or line wrapping are one row, the same rule the training split
-    uses to group them."""
+def state_key(state, mode="whitespace"):
+    """Hash for dedupe and the cache.
+
+    `whitespace` collapses runs of whitespace first, so two rows that differ only in
+    trailing spaces or line wrapping are one row, the same rule the training split
+    uses to group them. `exact` hashes the content as is; the code rubric uses it
+    because indentation and spacing inside a snippet can be the point of the row.
+    """
+    if mode == "exact":
+        return digest(state)
     if "messages" in state:
         folded = {"messages": [{"role": m["role"], "content": " ".join(m["content"].split())} for m in state["messages"]]}
     else:
@@ -252,6 +258,9 @@ def screen_dataset(input_path: Path, output_dir: Path, config: dict, progress=No
     if path.resolve().parent == destination.resolve() and path.name in {"keep.jsonl", "review.jsonl", "reject.jsonl", "audit.jsonl"}:
         raise ValueError("input path would be overwritten by output partitions")
     rubric = json.loads((Path(__file__).parent / "rubrics" / f"{cfg['rubric']}.json").read_text(encoding="utf-8"))
+    dedupe_mode = rubric.get("dedupe", "whitespace")
+    if dedupe_mode not in ("whitespace", "exact"):
+        raise ValueError("rubric dedupe must be whitespace or exact")
     semantic = {key: value for key, value in cfg.items() if key not in {"concurrency", "max_requests", "timeout", "attempts"}}
     config_hash = digest({"engine_version": ENGINE_VERSION, "config": semantic, "rubric": rubric})
     stop_event = threading.Event()
@@ -263,7 +272,7 @@ def screen_dataset(input_path: Path, output_dir: Path, config: dict, progress=No
               "counts": counts, "processed": 0, "errors": [], "error_count": 0, "unevaluated": 0, "config": cfg, "config_hash": config_hash,
               "engine_version": ENGINE_VERSION, "dimensions": {}, "api_requests": 0, "cache_hits": 0,
               "usage": {"input_tokens": 0, "output_tokens": 0, "cost": 0.0}, "models": {},
-              "thresholds": effective_thresholds(rubric, cfg["confidence"]) if client else {},
+              "thresholds": effective_thresholds(rubric, cfg["confidence"]) if client else {}, "dedupe": dedupe_mode,
               "input_exhausted": False, "artifacts": {name: f"{name}.jsonl" for name in ("keep", "review", "reject", "audit")}}
     if client is None:
         report["notice"] = "Demo performs local length, exact-duplicate and email-pattern checks only; no Jev model or semantic quality evaluation is used."
@@ -296,6 +305,11 @@ def screen_dataset(input_path: Path, output_dir: Path, config: dict, progress=No
         stack.callback(db.close)
         db.execute("PRAGMA cache_size=-4096")
         db.execute("PRAGMA temp_store=FILE")
+        # WAL with synchronous=NORMAL: a commit no longer waits for the disk; a power
+        # cut can drop the last transactions but never corrupts the cache, and any
+        # dropped decision is simply asked for again on retry.
+        db.execute("PRAGMA journal_mode=WAL")
+        db.execute("PRAGMA synchronous=NORMAL")
         db.execute("CREATE TABLE IF NOT EXISTS cache (config_hash TEXT NOT NULL, state_hash TEXT NOT NULL, result TEXT NOT NULL, PRIMARY KEY(config_hash,state_hash))")
         db.execute("CREATE TABLE IF NOT EXISTS seen (state_hash TEXT PRIMARY KEY)")
         db.execute("DELETE FROM seen")
@@ -323,7 +337,7 @@ def screen_dataset(input_path: Path, output_dir: Path, config: dict, progress=No
                 else:
                     try:
                         state = normalize_record(record)
-                        state_hash = state_key(state)
+                        state_hash = state_key(state, dedupe_mode)
                         size = len(state_text(state))
                     except (ValueError, UnicodeError, RecursionError) as exc:
                         result = _local_result("review", "invalid_content", error=str(exc)[:120])
@@ -340,6 +354,11 @@ def screen_dataset(input_path: Path, output_dir: Path, config: dict, progress=No
                                 result = json.loads(cached[0])
                                 cache_hit = True
                                 report["cache_hits"] += 1
+                            elif client is None:
+                                # Local rules are microseconds of pure Python; handing them to
+                                # a worker thread costs more than running them here.
+                                result = Future()
+                                result.set_result(evaluate(state))
                             else:
                                 result = pool.submit(evaluate, state)
                 pending.append((line, record, state_hash, result, cache_hit))

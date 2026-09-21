@@ -1,6 +1,7 @@
 {
   "name": "general",
   "version": "2",
+  "dedupe": "whitespace",
   "description": "Conservative general-purpose training-data screening. This is a screening rubric, not a factual verification service.",
   "questions": {
     "quality": {
