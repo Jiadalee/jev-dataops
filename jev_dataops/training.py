@@ -66,7 +66,12 @@ def validate_training_config(config: dict[str, Any]) -> dict[str, Any]:
         "learning_rate": _real(config, "learning_rate", 0.0002, 1e-7, 0.01),
         "validation_fraction": _real(config, "validation_fraction", 0.15, 0.05, 0.4),
         "test_fraction": _real(config, "test_fraction", 0.15, 0.05, 0.4),
+        "lora_r": _integer(config, "lora_r", 8, 1, 256),
+        "lora_alpha": _integer(config, "lora_alpha", 16, 1, 1024),
+        "loss_mask": config.get("loss_mask", "answer"),
     }
+    if normalized["loss_mask"] not in ("answer", "full"):
+        raise ValueError("loss_mask must be answer or full.")
     if normalized["validation_fraction"] + normalized["test_fraction"] > 0.8:
         raise ValueError("Validation and test fractions must leave at least 20% for training.")
     if trainer == "huggingface":
@@ -99,6 +104,18 @@ def _rows(path: Path) -> Iterator[dict[str, Any]]:
             yield row
 
 
+def _conversation(state: dict[str, Any]) -> list[dict[str, str]] | None:
+    """The record as chat turns, or None for a bare passage that has no prompt."""
+    if "messages" in state:
+        return state["messages"]
+    if "instruction" in state:
+        prompt = state["instruction"] + ("\n\n" + state["input"] if state.get("input", "").strip() else "")
+        return [{"role": "user", "content": prompt}, {"role": "assistant", "content": state["output"]}]
+    if "prompt" in state:
+        return [{"role": "user", "content": state["prompt"]}, {"role": "assistant", "content": state["response"]}]
+    return None
+
+
 def _text(row: dict[str, Any]) -> str:
     # Share schema and precedence with screening: users must train on the content
     # that was actually scored, even when a source row contains multiple layouts.
@@ -115,6 +132,37 @@ def _text(row: dict[str, Any]) -> str:
     if len(result) > MAX_TEXT_CHARS:
         raise ValueError("A training record exceeds the 1,000,000 character limit.")
     return result
+
+
+def _render(tokenizer: Any, row: dict[str, Any]) -> tuple[str, str | None, bool]:
+    """(full_text, prompt_text, templated) for one split row.
+
+    With a chat template the model's own turn markers are used and the prompt is
+    everything up to the assistant's final answer; without one, the plain
+    `role: content` text of the split file is used with the same cut. A bare
+    passage has no prompt. `templated` says whether special tokens are already in
+    the text (a template writes its own) or the tokenizer must add them.
+    """
+    from .screening import normalize_record
+
+    # The split row carries the content it was scored on under `_state`; the `text`
+    # the split writer added would otherwise shadow an instruction/output pair.
+    state = row.get("_state") or normalize_record(row)
+    turns = _conversation(state)
+    if turns is None or turns[-1]["role"] != "assistant":
+        return row["text"], None, False
+    if getattr(tokenizer, "chat_template", None):
+        try:
+            full = tokenizer.apply_chat_template(turns, tokenize=False)
+            prompt = tokenizer.apply_chat_template(turns[:-1], tokenize=False, add_generation_prompt=True)
+            if isinstance(full, str) and isinstance(prompt, str) and full.startswith(prompt):
+                return full, prompt, True
+        except Exception:  # noqa: BLE001 - a template that cannot render these turns falls back to plain text.
+            pass
+    full, answer = row["text"], turns[-1]["content"].strip()
+    if answer and full.endswith(answer) and len(full) > len(answer):
+        return full, full[:len(full) - len(answer)], False
+    return full, None, False
 
 
 def _digest(value: str) -> str:
@@ -157,9 +205,12 @@ def _prepare_splits(source: Path, destination: Path, config: dict, progress: Pro
             CREATE TABLE components (key TEXT PRIMARY KEY, ordering TEXT NOT NULL, split TEXT);
         """)
         count = 0
+        from .screening import normalize_record
+
         for row in _rows(source):
             _check_cancelled(cancelled)
             text = _text(row)
+            state = normalize_record(row)
             # Exact content (with whitespace normalized) joins even distinct declared groups.
             keys = ["text:" + _digest(" ".join(text.split()))]
             for field in ("group_id", "conversation_id"):
@@ -175,6 +226,7 @@ def _prepare_splits(source: Path, destination: Path, config: dict, progress: Pro
                 _join(db, keys[0], key)
             output = dict(row)
             output["text"] = text
+            output["_state"] = state
             db.execute("INSERT INTO records(node,payload) VALUES (?,?)",
                        (keys[0], json.dumps(output, ensure_ascii=False, allow_nan=False)))
             count += 1
@@ -344,29 +396,54 @@ def _huggingface(directory: Path, config: dict, progress: Progress, cancelled: C
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "right"
-    model = AutoModelForCausalLM.from_pretrained(
-        base_model, trust_remote_code=False, use_safetensors=True, local_files_only=local_only,
-    )
+    configured_device = os.environ.get("JEV_TRAIN_DEVICE", "auto")
+    if configured_device not in ("auto", "cpu", "cuda", "mps"):
+        raise ValueError("JEV_TRAIN_DEVICE must be auto, cpu, cuda, or mps.")
+    device = ("cuda" if torch.cuda.is_available() else "cpu") if configured_device == "auto" else configured_device
+    # The frozen base is held in bfloat16 where the device does it natively; the LoRA
+    # weights stay in float32 (PEFT's default), so the optimiser step is unaffected.
+    dtype = torch.bfloat16 if device == "cuda" and torch.cuda.is_bf16_supported() else torch.float32
+    loading = {"trust_remote_code": False, "use_safetensors": True, "local_files_only": local_only}
+    try:
+        model = AutoModelForCausalLM.from_pretrained(base_model, dtype=dtype, **loading)
+    except TypeError:  # transformers before 4.56 spells the argument torch_dtype
+        model = AutoModelForCausalLM.from_pretrained(base_model, torch_dtype=dtype, **loading)
     model.config.pad_token_id = tokenizer.pad_token_id
     model.config.use_cache = False
     model_limit = getattr(model.config, "max_position_embeddings", None)
     if isinstance(model_limit, int) and config["max_seq_length"] > model_limit:
         raise ValueError(f"max_seq_length exceeds the model limit of {model_limit}.")
-    configured_device = os.environ.get("JEV_TRAIN_DEVICE", "auto")
-    if configured_device not in ("auto", "cpu", "cuda", "mps"):
-        raise ValueError("JEV_TRAIN_DEVICE must be auto, cpu, cuda, or mps.")
-    device = ("cuda" if torch.cuda.is_available() else "cpu") if configured_device == "auto" else configured_device
     model.to(device)
+    uses_template = bool(getattr(tokenizer, "chat_template", None))
+    masked_rows, prompt_tokens, learned_tokens = 0, 0, 0
 
-    def encode(rows: list[dict]) -> dict:
-        encoded = tokenizer([row["text"] for row in rows], truncation=True,
-                            max_length=config["max_seq_length"] - 1, padding=False,
-                            add_special_tokens=True)
-        ids = [sequence + [tokenizer.eos_token_id] for sequence in encoded["input_ids"]]
+    def encode(rows: list[dict], count: bool = False) -> dict:
+        nonlocal masked_rows, prompt_tokens, learned_tokens
+        rendered = [_render(tokenizer, row) for row in rows]
+        limit = config["max_seq_length"] - 1
+        ids, prompt_lengths = [], []
+        for full, prompt, templated in rendered:
+            sequence = tokenizer(full, truncation=True, max_length=limit, add_special_tokens=not templated)["input_ids"]
+            ids.append(sequence + [tokenizer.eos_token_id])
+            cut = 0
+            if config["loss_mask"] == "answer" and prompt is not None:
+                prompt_ids = tokenizer(prompt, add_special_tokens=not templated)["input_ids"]
+                # The prompt's tokens must be a prefix of the full sequence for the mask to be
+                # exact; when a tokenizer merges across the boundary, learn the whole row instead.
+                if sequence[:len(prompt_ids)] == prompt_ids and len(prompt_ids) < len(sequence):
+                    cut = len(prompt_ids)
+            prompt_lengths.append(cut)
         # Padding and EOS can share an ID; mask via attention_mask so genuine EOS is still learned.
         batch = tokenizer.pad({"input_ids": ids}, padding=True, return_tensors="pt")
         labels = batch["input_ids"].clone()
         labels[batch["attention_mask"] == 0] = -100
+        for index, cut in enumerate(prompt_lengths):
+            if cut:
+                labels[index, :cut] = -100
+        if count:
+            masked_rows += sum(1 for cut in prompt_lengths if cut)
+            prompt_tokens += sum(prompt_lengths)
+            learned_tokens += int((labels != -100).sum().item())
         batch["labels"] = labels
         return {key: value.to(device) for key, value in batch.items()}
 
@@ -392,28 +469,40 @@ def _huggingface(directory: Path, config: dict, progress: Progress, cancelled: C
     baseline_validation, validation_tokens = evaluate(directory / "validation.jsonl")
     baseline_test, test_tokens = evaluate(directory / "test.jsonl")
     model = get_peft_model(model, LoraConfig(
-        task_type=TaskType.CAUSAL_LM, target_modules="all-linear", r=8,
-        lora_alpha=16, lora_dropout=0.05, bias="none",
+        task_type=TaskType.CAUSAL_LM, target_modules="all-linear", r=config["lora_r"],
+        lora_alpha=config["lora_alpha"], lora_dropout=0.05, bias="none",
     ))
-    optimizer = torch.optim.AdamW((p for p in model.parameters() if p.requires_grad), lr=config["learning_rate"])
+    trainable = [p for p in model.parameters() if p.requires_grad]
+    optimizer = torch.optim.AdamW(trainable, lr=config["learning_rate"], weight_decay=0.0)
+    # Linear warm-up over the first tenth of the run, then linear decay to zero: the
+    # usual shape for a short adapter run, and it stops the last steps from
+    # overshooting on a small batch.
+    total_steps = config["max_steps"]
+    warmup = max(1, total_steps // 10)
+    schedule = torch.optim.lr_scheduler.LambdaLR(
+        optimizer, lambda s: (s + 1) / warmup if s < warmup else max(0.0, (total_steps - s) / max(1, total_steps - warmup)))
     step, seen, losses = 0, 0, []
     for epoch in range(config["epochs"]):
         model.train()
         for rows in _batches(directory / "train.jsonl", config["batch_size"], cancelled):
             if step >= config["max_steps"]:
                 break
-            batch = encode(rows)
+            batch = encode(rows, count=True)
+            if not int((batch["labels"][:, 1:] != -100).sum().item()):
+                continue  # every token of this batch is prompt or padding; nothing to learn from
             optimizer.zero_grad(set_to_none=True)
             loss = model(**batch).loss
             if not bool(torch.isfinite(loss).item()):
                 raise RuntimeError("Training returned a non-finite loss; no successful model report was written.")
             loss.backward()
-            torch.nn.utils.clip_grad_norm_((p for p in model.parameters() if p.requires_grad), 1.0)
+            torch.nn.utils.clip_grad_norm_(trainable, 1.0)
+            learning_rate = optimizer.param_groups[0]["lr"]
             optimizer.step()
+            schedule.step()
             step += 1
             seen += len(rows)
             loss_value = float(loss.detach().cpu())
-            losses.append({"step": step, "epoch": epoch + 1, "loss": loss_value})
+            losses.append({"step": step, "epoch": epoch + 1, "loss": loss_value, "lr": learning_rate})
             _emit(progress, "training", step=step, max_steps=config["max_steps"], loss=loss_value)
         if step >= config["max_steps"]:
             break
@@ -424,6 +513,18 @@ def _huggingface(directory: Path, config: dict, progress: Progress, cancelled: C
     model_dir = directory / "model"
     model.save_pretrained(model_dir, safe_serialization=True)
     tokenizer.save_pretrained(model_dir)
+    answer_only = config["loss_mask"] == "answer"
+    limitations = [
+        "Held-out loss does not establish task accuracy, fairness, factuality, or production readiness.",
+        "Single-process streaming training; one local model replica must fit in memory.",
+        "Sequence tails beyond max_seq_length are truncated; row order is preserved within each split.",
+    ]
+    if answer_only:
+        limitations.insert(0, "Answer-only loss: prompt tokens are masked for rows with a prompt; bare passages are learned in full.")
+        if masked_rows == 0 and seen:
+            limitations.insert(1, "No row had a maskable prompt, so the run was effectively full-text SFT.")
+    else:
+        limitations.insert(0, "Full-text causal SFT; prompt tokens are included in the loss.")
     return {
         "mode": "llm_lora", "trainer": "huggingface", "model_type": "causal_lm_lora", "is_llm": True,
         "base_model": base_model, "base_model_revision": getattr(model.config, "_commit_hash", None),
@@ -431,13 +532,15 @@ def _huggingface(directory: Path, config: dict, progress: Progress, cancelled: C
         "baseline_validation_loss": baseline_validation, "trained_validation_loss": validation_loss,
         "evaluation_tokens": {"validation": validation_tokens, "test": test_tokens},
         "steps": step, "training_record_visits": seen, "loss_history": losses,
-        "metric_unit": "natural-log NLL per causal tokenizer token", "device": device,
+        "metric_unit": ("natural-log NLL per answer token" if answer_only else "natural-log NLL per causal tokenizer token"),
+        "device": device, "dtype": str(dtype).replace("torch.", ""),
+        "chat_template": uses_template, "loss_mask": config["loss_mask"],
+        "masking": {"rows_with_masked_prompt": masked_rows, "prompt_tokens_masked": prompt_tokens, "tokens_learned": learned_tokens},
+        "lora": {"r": config["lora_r"], "alpha": config["lora_alpha"], "dropout": 0.05, "target_modules": "all-linear"},
+        "schedule": {"warmup_steps": warmup, "decay": "linear", "peak_learning_rate": config["learning_rate"]},
         "trainable_parameters": sum(p.numel() for p in model.parameters() if p.requires_grad),
         "total_parameters": sum(p.numel() for p in model.parameters()),
-        "limitations": ["Full-text causal SFT; prompt tokens are included in the loss.",
-                        "Held-out loss does not establish task accuracy, fairness, factuality, or production readiness.",
-                        "Single-process streaming training; one local model replica must fit in memory.",
-                        "Sequence tails beyond max_seq_length are truncated; row order is preserved within each split."],
+        "limitations": limitations,
     }
 
 
