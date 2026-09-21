@@ -161,7 +161,7 @@ For your first live API run, start with a small dataset and **disable Auto-train
 
 ### How are screening decisions made?
 
-The default general rubric assesses content quality, apparent privacy exposure, and suitability for training. Format errors, length violations, and exact duplicates are handled locally first. JEV results are routed as follows:
+The default general rubric assesses content quality, apparent privacy exposure, and suitability for training. Format errors, length violations, and duplicates are handled locally first. The general and finance rubrics treat rows that differ only in whitespace as duplicates (`"dedupe": "whitespace"`); the code rubric matches exactly, because indentation inside a snippet can be the point of the row. JEV results are routed as follows:
 
 | Decision | Meaning | What happens next |
 | --- | --- | --- |
@@ -186,7 +186,7 @@ A malformed JEV answer is asked for once more before the row is sent to review w
 
 Incomplete screening due to an exhausted request budget, authentication failure, or network error blocks automatic training. Under **Application domain**, choose General (`general`), Finance (`finance`), or Code (`code`). You can also select the rubric through the [CLI or API](#automation). Domain selection configures the starter rubric for live JEV screening; Demo does not perform semantic domain assessment. See the [Domain adaptation guide](docs/DOMAIN_GUIDE.md) to customize additional domains.
 
-> **Live screening sends the selected content fields to the chosen third-party provider.** Remove sensitive information beforehand and confirm that you have permission to transmit the data. The model's privacy check happens after submission and cannot replace pre-upload redaction. The token in **Connection settings** is `JEV_API_TOKEN`, which controls access to the workbench; it is not an OpenRouter or TypeSafe key. The Python CLI does not automatically load `.env` files.
+> **Live screening sends the selected content fields to the chosen third-party provider.** Remove sensitive information beforehand and confirm that you have permission to transmit the data. The model's privacy check happens after submission and cannot replace pre-upload redaction. The token in **Connection settings** is `JEV_API_TOKEN`, which controls access to the workbench; it is not an OpenRouter or TypeSafe key. The Python CLI does not read `.env` files on its own; pass `--env-file .env` to load one (existing environment variables win). Live screening honours `HTTPS_PROXY` and `NO_PROXY`, reaching the provider through a CONNECT tunnel with TLS still ending at the provider.
 
 API references: [TypeSafe API](https://docs.typesafe.ai/api), [OpenRouter decisions SDK](https://github.com/OpenRouterTeam/typescript-sdk/blob/main/src/funcs/alphaDecisionsCreate.ts). OpenRouter's decisions endpoint is currently alpha; the API and model availability may change.
 
@@ -304,7 +304,7 @@ jev-dataops run --input /data/corpus.jsonl --output /data/llm-run-001 \
 
 Replace the paths with your own input files and output directories. Set the live request limit according to dataset size and budget. A limit of 1,000 does not guarantee that 1,000 records can be screened because retries also count. CLI outputs use `screening/` and `training/` under the specified directory; the browser uses `training-1/` for its first attempt.
 
-Run `jev-dataops run --help` to see supported options. Screening takes `--model`, `--min-chars`, `--max-chars` and `--timeout`; training takes `--epochs`, `--max-steps`, `--batch-size`, `--learning-rate`, `--max-seq-length`, `--seed`, `--lora-r`, `--lora-alpha` and `--loss-mask answer|full`, with the same small defaults as the browser.
+Run `jev-dataops run --help` to see supported options. The CLI prints progress and a short summary (decisions, requests, cost, resolved model, rows not evaluated) on stderr and the JSON report on stdout; `--quiet` leaves only the JSON. Screening takes `--model`, `--min-chars`, `--max-chars` and `--timeout`; training takes `--epochs`, `--max-steps`, `--batch-size`, `--learning-rate`, `--max-seq-length`, `--seed`, `--lora-r`, `--lora-alpha` and `--loss-mask answer|full`, with the same small defaults as the browser.
 
 ### Configure a training experiment through HTTP
 
@@ -345,7 +345,7 @@ See the running service's [Swagger documentation](http://localhost:8000/docs) fo
 
 Streaming reads, bounded concurrency, and disk-backed SQLite deduplication and caching avoid loading the whole dataset into Python memory. **This is currently a single-host workbench:** it executes one complete run at a time, with concurrent screening inside each run. Distributed queues, object storage, and resumable chunked uploads are not implemented. The model itself must still fit in memory / VRAM.
 
-One reproducible local benchmark screened **100,000 synthetic records in approximately 21 seconds, with peak process memory of approximately 38 MiB**. Cache and audit writes are committed in groups of 500 rows or once a second rather than once per row, and each screening worker keeps one TLS connection to the provider open across requests. This measures local rules and the disk pipeline, not JEV API throughput or language-model training speed. See the [benchmark notes](docs/BENCHMARKS.md) for the environment, training steps, and reproduction commands.
+One reproducible local benchmark screened **100,000 synthetic records in approximately 16 seconds, with peak process memory of approximately 39 MiB**. Cache and audit writes are committed in groups of 500 rows or once a second rather than once per row, the cache runs in WAL mode, and each screening worker keeps one TLS connection to the provider open across requests. This measures local rules and the disk pipeline, not JEV API throughput or language-model training speed. See the [benchmark notes](docs/BENCHMARKS.md) for the environment, training steps, and reproduction commands.
 
 Before scaling up, use a small sample to check the schema, screening rubric, and grouping. Then increase request budget and concurrency, followed by training steps. Improve the data based on reviewed examples from the `review` and `reject` partitions rather than retention rate alone. Reserve disk space for original uploads, partitions, audit logs, caches, training splits, and model artifacts.
 

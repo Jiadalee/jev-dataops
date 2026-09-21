@@ -25,7 +25,7 @@ All records in this particular corpus pass the local rules. Deliberate invalid/d
 
 ### Grouped commits
 
-The figures above were taken with one SQLite commit per row. On a Linux workstation with an ext4 root disk (Python 3.12.3), the same 100,000-row run took **867 s (115 rows/s)** that way; committing every 500 rows or once a second brought it to **21.3 s (4,700 rows/s)** with the same peak memory (35 → 38 MiB) and identical partitions. A crash now loses at most 500 cached decisions, which the retry re-asks for.
+The figures above were taken with one SQLite commit per row. On a Linux workstation with an ext4 root disk (Python 3.12.3), the same 100,000-row run took **867 s (115 rows/s)** that way; committing every 500 rows or once a second brought it to **21.3 s (4,700 rows/s)** with the same peak memory (35 → 38 MiB) and identical partitions. A crash now loses at most 500 cached decisions, which the retry re-asks for. Putting the cache in WAL mode with `synchronous=NORMAL` and running demo rules inline instead of on the worker pool brought screening to **16.3 s (6,100 rows/s)**; turning the journal off for the scratch split index, which is deleted when the split finishes, brought split + train + evaluate from 13.7 s to **6.2 s**.
 
 ## Live screening: gates and connection reuse
 

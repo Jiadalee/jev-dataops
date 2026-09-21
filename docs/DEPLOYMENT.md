@@ -10,7 +10,7 @@ Cancellation is cooperative at records, batches and network timeout boundaries. 
 
 ## Team deployment
 
-Set `JEV_API_TOKEN` before binding a remote interface. Use a long random shared token, HTTPS reverse proxy, an explicit `JEV_ALLOWED_HOSTS` list and an appropriately sized request-body limit. The API rejects off-host access without a token and cross-origin writes. Do not enable wildcard hosts or permissive CORS on a public deployment.
+Set `JEV_API_TOKEN` before binding a remote interface. Use a long random shared token, HTTPS reverse proxy, an explicit `JEV_ALLOWED_HOSTS` list and an appropriately sized request-body limit. The API rejects off-host access without a token and cross-origin writes. Loopback requests that carry `X-Forwarded-For`, `X-Real-IP` or `Forwarded` are treated as off-host too, so a reverse proxy in front of an unconfigured server is refused rather than silently trusted. Do not enable wildcard hosts or permissive CORS on a public deployment.
 
 The shared token is an operator access control, **not multi-tenant account isolation**. All authorized users share datasets and results. For distinct trust domains, use separate service instances/data volumes or add an identity provider and per-user access controls. TLS, durable backups, disk quotas, ingress rate limits and tenant scheduling belong to the deployment layer.
 
