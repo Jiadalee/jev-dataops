@@ -2,6 +2,10 @@
 
 **A traceable pipeline for general and domain-specific data: upload → screen → evaluate data → train a model → evaluate the result.**
 
+**[Try the public browser demo](https://jev-dataops-demo.renaaaa2.chatgpt.site)** — no installation, API key, or GPU required. Click **Use example → Start workflow**, then inspect screening decisions, measured evaluation, and downloadable reports. You can also choose your own UTF-8 JSONL / CSV file (up to **2 MiB / 1,000 rows**).
+
+The public demo processes files in your browser tab using local screening rules and a byte-bigram statistical model. It does not call JEV or train an LLM. Reloading clears its data and results, so download anything you need first. For domain-specific JEV screening, LoRA training, and larger datasets, use the self-hosted application below. [Demo scope and build instructions](public_demo/README.md).
+
 Start with a local example on an ordinary computer, then connect a JEV screening provider and your own language model. The project includes a browser workbench, a CLI, and Python / HTTP APIs for developers and researchers who need to answer two recurring questions: “Is this dataset worth training on?” and “What changed after training?”
 
 > **JEV evaluates the data; your target model learns from it.** This project calls the JEV API for screening. Subsequent fine-tuning updates the Hugging Face model you configure, not JEV itself.
