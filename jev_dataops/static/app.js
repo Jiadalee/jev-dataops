@@ -7,9 +7,10 @@ const state = {
   datasets: [], runs: [], datasetId: null, runId: null, health: null,
   token: sessionStorage.getItem("jev_api_token") || "", loading: false,
   uploading: false, submitting: false, polling: false, timer: null,
-  toastTimer: null, logsSignature: "", artifactsSignature: "", actionPending: false, settlePending: false,
+  toastTimer: null, logsSignature: "", artifactsSignature: "", actionPending: false, settlePending: false, lossChartWidth: null,
 };
 const statuses = { queued: "等待中", running: "运行中", completed: "已完成", failed: "失败", cancelled: "已取消" };
+const rubricNames = { general: "通用", finance: "金融", code: "代码" };
 const stages = [
   { key: "upload", label: "上传数据" }, { key: "screening", label: "智能筛选" },
   { key: "data_evaluation", label: "数据评估" }, { key: "training", label: "自动训练" },
@@ -17,6 +18,7 @@ const stages = [
 ];
 const number = (value) => Number.isFinite(Number(value)) ? Number(value).toLocaleString("zh-CN") : "—";
 const formatMetric = (value) => typeof value === "number" && Number.isFinite(value) ? value.toFixed(4) : "—";
+const finiteNonnegative = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0;
 const isActive = (run) => run && ["running", "queued"].includes(run.status);
 function el(tag, className, text) {
   const element = document.createElement(tag);
@@ -115,6 +117,25 @@ function updateModeNotice() {
       : trainer === "demo" ? "数据内容将发送至所选第三方 JEV 服务；请仅提交有权共享的数据。后续验证字节统计模型，不训练大模型。"
       : `数据内容发送至第三方 JEV 服务，请仅提交有权共享的数据。随后训练 ${state.health?.training?.base_model || "已配置模型"} 的 LoRA 适配器。`;
   }
+  updateRubricNotice();
+}
+function updateRubricNotice() {
+  const rubric = $("rubric").value;
+  const name = rubricNames[rubric] || rubricNames.general;
+  if ($("provider").value === "demo") {
+    $("rubric-note").textContent = `已选择${name}领域。Demo 仅演示本地规则，不解释领域语义；接入 JEV 后才会应用对应领域的基础筛选。`;
+    return;
+  }
+  const limitation = rubric === "code" ? "不执行代码，也不验证领域事实。" : rubric === "finance" ? "不核验金融事实，也不构成专业评审。" : "不验证领域事实，也不执行代码。";
+  $("rubric-note").textContent = `${name}领域从内容质量、隐私、可训练性三个维度进行基础筛选；${limitation}`;
+}
+function renderOverview() {
+  $("overview-datasets").textContent = number(state.datasets.length);
+  const rows = state.datasets.map((dataset) => dataset.rows);
+  $("overview-records").textContent = rows.every(finiteNonnegative) ? number(rows.reduce((sum, value) => sum + value, 0)) : "—";
+  $("overview-completed").textContent = number(state.runs.filter((run) => run.status === "completed").length);
+  const active = state.runs.filter(isActive).length;
+  $("overview-run-note").textContent = `最近载入 ${number(state.runs.length)} 次运行${active ? ` · ${number(active)} 个进行中` : ""}`;
 }
 function renderDatasets() {
   const select = $("dataset-select");
@@ -129,6 +150,7 @@ function renderDatasets() {
   if (!state.datasets.some((dataset) => dataset.id === state.datasetId)) state.datasetId = state.datasets[0]?.id || null;
   select.value = state.datasetId || "";
   $("nav-dataset-count").textContent = number(state.datasets.length);
+  renderOverview();
   renderDatasetPreview();
   updateStartState();
 }
@@ -165,6 +187,7 @@ function renderRunList() {
   $("history-count").textContent = number(state.runs.length);
   $("nav-run-count").textContent = number(state.runs.length);
   $("run-total").textContent = `${number(state.runs.length)} RUN${state.runs.length === 1 ? "" : "S"}`;
+  renderOverview();
   if (!state.runs.length) { list.replaceChildren(emptyRunList.cloneNode(true)); return; }
   const fragment = document.createDocumentFragment();
   for (const run of state.runs) {
@@ -219,15 +242,99 @@ function renderProgress(run) {
   else $("run-progress").value = run.status === "completed" ? 100 : total > 0 ? Math.min(100, Math.max(0, processed / total * 100)) : 0;
   $("run-progress").setAttribute("aria-label", label);
 }
+function renderDistribution(run) {
+  const categories = [["keep", "保留"], ["review", "待审"], ["reject", "剔除"]];
+  const counts = run.counts || {};
+  const measured = categories.every(([key]) => finiteNonnegative(counts[key]));
+  const total = measured ? categories.reduce((sum, [key]) => sum + counts[key], 0) : 0;
+  $("distribution-section").hidden = !total;
+  const chart = $("distribution-chart"); chart.replaceChildren();
+  if (!total) return;
+  const bar = el("div", "distribution-bar");
+  // The adjacent legend carries the same values in accessible text.
+  bar.setAttribute("aria-hidden", "true");
+  const legend = el("ul", "distribution-legend");
+  for (const [key, label] of categories) {
+    const percentage = counts[key] / total * 100;
+    const segment = el("span", `distribution-segment ${key}`);
+    segment.style.width = `${percentage}%`;
+    segment.title = `${label} ${number(counts[key])} 条 · ${percentage.toFixed(1)}%`;
+    bar.append(segment);
+    const item = el("li", "distribution-item");
+    const dot = el("span", `distribution-dot ${key}`); dot.setAttribute("aria-hidden", "true");
+    item.append(dot, el("span", "distribution-label", label), el("span", "distribution-value", `${number(counts[key])} · ${percentage.toFixed(1)}%`));
+    legend.append(item);
+  }
+  chart.append(bar, legend);
+  $("distribution-note").textContent = `基于已分类的 ${number(total)} 条记录${isActive(run) ? " · 随筛选进度更新" : ""}`;
+}
+function renderLossChart(report, demo) {
+  const byStep = new Map();
+  for (const point of Array.isArray(report?.loss_history) ? report.loss_history : []) {
+    if (point && finiteNonnegative(point.step) && finiteNonnegative(point.loss)) byStep.set(point.step, point.loss);
+  }
+  const points = [...byStep].map(([step, loss]) => ({ step, loss })).sort((a, b) => a.step - b.step);
+  $("loss-chart-section").hidden = points.length < 2;
+  const chart = $("loss-chart"); chart.replaceChildren();
+  if (points.length < 2) return;
+  const svg = (tag, attributes = {}, text) => {
+    const element = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, String(value));
+    if (text !== undefined) element.textContent = String(text);
+    return element;
+  };
+  const width = Math.min(680, Math.max(280, chart.clientWidth || 680));
+  state.lossChartWidth = width;
+  const height = 206, left = 54, right = 20, top = 20, bottom = 36;
+  const plotWidth = width - left - right, plotHeight = height - top - bottom;
+  const first = points[0], last = points[points.length - 1];
+  let minLoss = Infinity, maxLoss = -Infinity;
+  for (const point of points) { minLoss = Math.min(minLoss, point.loss); maxLoss = Math.max(maxLoss, point.loss); }
+  const padding = Math.max((maxLoss - minLoss) * 0.16, maxLoss * 0.04, 0.05);
+  const yMin = Math.max(0, minLoss - padding), yMax = maxLoss + padding;
+  const x = (step) => left + (step - first.step) / (last.step - first.step) * plotWidth;
+  const y = (loss) => top + (yMax - loss) / (yMax - yMin) * plotHeight;
+  const root = svg("svg", { class: "loss-svg", viewBox: `0 0 ${width} ${height}`, role: "img", "aria-labelledby": "loss-chart-title loss-chart-description" });
+  root.append(svg("title", { id: "loss-chart-title" }, `${demo ? "Demo 字节统计模型" : "大模型"}训练损失`));
+  root.append(svg("desc", { id: "loss-chart-description" }, `共 ${points.length} 个实测记录。第 ${first.step} 步 ${formatMetric(first.loss)}，第 ${last.step} 步 ${formatMetric(last.loss)}。最低 ${formatMetric(minLoss)}，最高 ${formatMetric(maxLoss)}。纵轴范围 ${formatMetric(yMin)} 至 ${formatMetric(yMax)}。`));
+  for (const value of [yMax, (yMax + yMin) / 2, yMin]) {
+    root.append(svg("line", { class: "loss-grid", x1: left, x2: width - right, y1: y(value), y2: y(value) }));
+    root.append(svg("text", { class: "loss-axis-label", x: left - 10, y: y(value) + 4, "text-anchor": "end" }, value.toFixed(2)));
+  }
+  const line = points.map((point, index) => `${index ? "L" : "M"}${x(point.step).toFixed(2)},${y(point.loss).toFixed(2)}`).join(" ");
+  root.append(svg("path", { class: "loss-area", d: `${line} L${x(last.step)},${top + plotHeight} L${x(first.step)},${top + plotHeight} Z`, "aria-hidden": "true" }));
+  root.append(svg("path", { class: "loss-line", d: line, fill: "none", "aria-hidden": "true" }));
+  for (const point of [first, last]) {
+    const marker = svg("circle", { class: "loss-point", cx: x(point.step), cy: y(point.loss), r: 4 });
+    marker.append(svg("title", {}, `Step ${number(point.step)} · NLL ${formatMetric(point.loss)}`));
+    root.append(marker);
+  }
+  root.append(svg("text", { class: "loss-axis-label", x: left, y: height - 9 }, `Step ${number(first.step)}`));
+  root.append(svg("text", { class: "loss-axis-label", x: width - right, y: height - 9, "text-anchor": "end" }, `Step ${number(last.step)}`));
+  chart.append(root);
+  $("loss-chart-note").textContent = `${number(points.length)} 个实测训练步 · NLL / ${demo ? "UTF-8 字节（含 EOS）" : "模型 token"} · 训练批次损失，与独立测试集指标分别观察`;
+}
 function renderModelReport(report) {
   $("model-report-section").hidden = !report;
-  if (!report) return;
+  if (!report) { renderLossChart(null, false); return; }
   const demo = report.is_llm === false || report.trainer === "demo" || report.mode === "demo";
   $("evaluation-kind").textContent = demo ? "DEMO · BYTE BIGRAM" : "LLM · HELD-OUT TEST";
   const metrics = $("model-metrics"); metrics.replaceChildren();
-  for (const [label, value, perplexity] of [["训练前 · Test NLL ↓", report.baseline_loss, report.baseline_perplexity], ["训练后 · Test NLL ↓", report.trained_loss, report.trained_perplexity]]) {
-    const metric = el("div", "model-metric"); metric.append(el("span", "", label), el("strong", "", formatMetric(value)));
-    if (typeof perplexity === "number") metric.append(el("small", "", `Perplexity ${formatMetric(perplexity)}`));
+  const comparable = [report.baseline_loss, report.trained_loss].every(finiteNonnegative);
+  const ceiling = comparable ? Math.max(report.baseline_loss, report.trained_loss) : 0;
+  for (const [kind, label, value, perplexity] of [["baseline", "训练前 · Test NLL ↓", report.baseline_loss, report.baseline_perplexity], ["trained", "训练后 · Test NLL ↓", report.trained_loss, report.trained_perplexity]]) {
+    const metric = el("div", "model-metric"); metric.append(el("span", "", label), el("strong", "", finiteNonnegative(value) ? formatMetric(value) : "—"));
+    metric.append(el("small", "model-metric-unit", demo ? "nats / UTF-8 byte + EOS" : "nats / model token"));
+    if (comparable) {
+      const meter = el("div", "model-meter"); meter.setAttribute("aria-hidden", "true");
+      const fill = el("span", `model-meter-fill ${kind}`); fill.style.width = `${ceiling ? value / ceiling * 100 : 0}%`;
+      meter.append(fill); metric.append(meter);
+    }
+    if (finiteNonnegative(perplexity)) metric.append(el("small", "", `Perplexity ${formatMetric(perplexity)}`));
+    if (kind === "trained" && typeof report.delta_loss === "number" && Number.isFinite(report.delta_loss)) {
+      const delta = report.delta_loss;
+      metric.append(el("span", `metric-delta ${delta < 0 ? "improved" : delta > 0 ? "worsened" : "unchanged"}`, `${delta < 0 ? "↓" : delta > 0 ? "↑" : "="} ${Math.abs(delta).toFixed(4)} NLL ${delta < 0 ? "下降" : delta > 0 ? "上升" : "持平"}`));
+    }
     metrics.append(metric);
   }
   const notes = [];
@@ -235,6 +342,7 @@ function renderModelReport(report) {
   if (report.split_counts) notes.push(`训练 / 验证 / 测试：${["train", "validation", "test"].map((key) => number(report.split_counts[key] || 0)).join(" / ")}`);
   notes.push(demo ? "Demo 为 UTF-8 字节二元统计模型，不是大模型；指标不能与 LLM token loss 直接比较。" : "在相同独立测试集上对比模型损失；该指标不代表任务准确率或生产效果。");
   $("evaluation-note").textContent = notes.join(" · ");
+  renderLossChart(report, demo);
 }
 function renderLogs(run) {
   const logs = run.logs || [];
@@ -294,12 +402,13 @@ function renderRun() {
   $("run-status").textContent = statuses[run.status] || run.status;
   $("run-status").className = `status-badge status-${Object.hasOwn(statuses, run.status) ? run.status : "queued"}`;
   const mode = run.config?.provider === "demo" ? "Demo 规则筛选" : `JEV ${run.config?.provider || ""}`;
-  $("run-meta").textContent = `${run.id.slice(0, 8)} · ${displayDate(run.created_at)} · ${mode}`;
+  $("run-meta").textContent = `${run.id.slice(0, 8)} · ${displayDate(run.created_at)} · ${mode} · 领域：${rubricNames[run.config?.rubric] || rubricNames.general}`;
   $("cancel-button").hidden = !isActive(run); $("cancel-button").disabled = state.actionPending;
   $("retry-button").hidden = !["failed", "cancelled"].includes(run.status); $("retry-button").disabled = state.actionPending;
   $("run-error").hidden = !run.error; $("run-error").textContent = run.error || "";
   renderStages(run); renderProgress(run);
   for (const key of ["keep", "review", "reject"]) $( `count-${key}`).textContent = run.counts?.[key] !== undefined ? number(run.counts[key]) : "—";
+  renderDistribution(run);
   renderModelReport(run.model_report);
   $("data-report-section").hidden = !run.data_report;
   $("data-report").textContent = run.data_report ? JSON.stringify(run.data_report, null, 2) : "";
@@ -387,7 +496,7 @@ $("pipeline-form").addEventListener("submit", async (event) => {
   state.submitting = true; updateStartState();
   try {
     const run = await request("/api/runs", { method: "POST", body: {
-      dataset_id: state.datasetId, provider: $("provider").value, trainer: $("trainer").value,
+      dataset_id: state.datasetId, provider: $("provider").value, trainer: $("trainer").value, rubric: $("rubric").value,
       confidence: Number($("confidence").value), concurrency: Number($("concurrency").value),
       max_requests: Number($("max-requests").value), auto_train: $("auto-train").checked,
     } });
@@ -413,6 +522,7 @@ $("cancel-button").addEventListener("click", () => runAction("cancel"));
 $("retry-button").addEventListener("click", () => runAction("retry"));
 $("confidence").addEventListener("input", () => { $("confidence-value").textContent = Number($("confidence").value).toFixed(2); });
 for (const id of ["provider", "trainer", "auto-train"]) $(id).addEventListener("change", updateModeNotice);
+$("rubric").addEventListener("change", updateRubricNotice);
 $("dataset-select").addEventListener("change", (event) => { state.datasetId = event.target.value; renderDatasetPreview(); updateStartState(); });
 $("file-input").addEventListener("change", (event) => uploadDataset(event.target.files[0]));
 $("example-button").addEventListener("click", () => uploadDataset(null, true));
@@ -430,8 +540,34 @@ $("settings-form").addEventListener("submit", (event) => {
   if (state.token) sessionStorage.setItem("jev_api_token", state.token); else sessionStorage.removeItem("jev_api_token");
   $("settings-dialog").close(); loadWorkspace();
 });
-for (const link of document.querySelectorAll("nav a")) link.addEventListener("click", () => {
-  for (const item of document.querySelectorAll("nav a")) item.classList.toggle("active", item === link);
-});
+const navigation = [...document.querySelectorAll('nav a[href^="#"]')]
+  .map((link) => ({ link, section: $(link.hash.slice(1)) })).filter((item) => item.section);
+function highlightNavigation(active) {
+  for (const { link } of navigation) {
+    link.classList.toggle("active", link === active);
+    if (link === active) link.setAttribute("aria-current", "location");
+    else link.removeAttribute("aria-current");
+  }
+}
+for (const { link } of navigation) link.addEventListener("click", () => highlightNavigation(link));
+if ("IntersectionObserver" in window && navigation.length) {
+  const observer = new IntersectionObserver(() => {
+    let active = navigation[0].link;
+    for (const item of navigation) if (item.section.getBoundingClientRect().top <= window.innerHeight * 0.3) active = item.link;
+    highlightNavigation(active);
+  }, { rootMargin: "-10% 0px -60% 0px", threshold: [0, 1] });
+  for (const { section } of navigation) observer.observe(section);
+}
+if ("ResizeObserver" in window) {
+  const chart = $("loss-chart");
+  const observer = new ResizeObserver(() => {
+    if (!chart.clientWidth || $("loss-chart-section").hidden) return;
+    const width = Math.min(680, Math.max(280, chart.clientWidth));
+    if (width === state.lossChartWidth) return;
+    const report = state.runs.find((run) => run.id === state.runId)?.model_report;
+    if (report) renderLossChart(report, report.is_llm === false || report.trainer === "demo" || report.mode === "demo");
+  });
+  observer.observe(chart);
+}
 document.addEventListener("visibilitychange", () => { if (!document.hidden && state.runs.some(isActive)) schedulePoll(0); });
 loadWorkspace();

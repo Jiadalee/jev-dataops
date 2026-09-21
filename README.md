@@ -1,6 +1,6 @@
 # JEV DataOps
 
-**把「上传数据 → 筛选 → 数据评估 → 模型训练 → 训练后评估」串成一条可操作、可追溯的链路。**
+**面向通用与垂域数据，把「上传数据 → 筛选 → 数据评估 → 模型训练 → 训练后评估」串成一条可操作、可追溯的链路。**
 
 你可以先在普通电脑上跑通示例，再接入 JEV 筛选服务和自己的大模型。项目同时提供浏览器工作台、命令行和 Python / HTTP API，适合需要反复验证“这批数据是否值得训练、训练后有没有变化”的开发者和研究者。
 
@@ -8,7 +8,7 @@
 
 **第一次使用：** [跑通示例](#quickstart) → [准备自己的数据](#data) → [开启真实筛选](#jev) → [开启大模型训练](#training) → [读懂结果](#results)
 
-**其他入口：** [命令行与 API](#automation) · [大数据处理](#scale) · [常见问题](#faq) · [部署与开发](#development)
+**其他入口：** [垂域如何接入](docs/DOMAIN_GUIDE.md) · [命令行与 API](#automation) · [大数据处理](#scale) · [常见问题](#faq) · [部署与开发](#development)
 
 English: A single-host workbench for streaming data selection, LoRA fine-tuning, and before/after evaluation on held-out data. Start with the offline demo, then configure a JEV provider and a target language model. See [training](docs/TRAINING.md) and [deployment](docs/DEPLOYMENT.md) for English technical documentation.
 
@@ -40,6 +40,14 @@ flowchart TD
 ```
 
 **数据评估回答“筛进了什么数据”；模型评估回答“模型学完后发生了什么变化”。** 当前模型评估使用 loss 和 perplexity，不包含业务准确率、人工评分或模型自动上线。
+
+## 同一条链路，也能用于你的垂直领域
+
+金融研报、代码问答、企业知识、法律文本、医学文献等场景，可以复用这套上传、分流、训练和评估流程。接入一个垂域的关键，是把**自己的数据、领域筛选标准、目标模型与独立业务评测集**接到链路中。例如，企业知识问答需要检查答案是否有制度依据；金融文本需要关注时间、来源与数字口径。这些标准应由领域团队定义，并通过小样本抽查校准。
+
+目前内置 `general`（通用）、`finance`（金融）、`code`（代码）三套**基础筛选规则**，覆盖质量、隐私和可训练性；金融与代码规则只加入了领域语境，并未内置事实查证、代码执行测试或专业业务评测。其他领域可从通用规则改起。你可以逐步沉淀规则版本、分流数据、模型适配器和评测结果；领域能力是否提升，仍需用自己的任务指标验证。
+
+→ 阅读 **[垂域接入指南](docs/DOMAIN_GUIDE.md)**：从选场景、准备数据、修改规则，到隔离评测集与接入业务指标。
 
 <a id="quickstart"></a>
 ## 1. 先跑通本地示例
@@ -169,7 +177,7 @@ jev-dataops serve
 | 并发请求数 | `4` | 同时处理的筛选任务数；真实吞吐受服务配额影响 |
 | 请求上限 | `1000` | 本次运行最多发送的 HTTP 请求次数，包含重试；不是样本数，也不是金额上限 |
 
-如果请求预算耗尽、认证失败或网络故障导致筛选不完整，系统会阻止后续自动训练。可用的领域规则包括 `general`、`finance`、`code`，通过 [CLI 或 API](#automation) 选择；当前网页使用 `general`。
+如果请求预算耗尽、认证失败或网络故障导致筛选不完整，系统会阻止后续自动训练。在网页「应用领域」中可选择通用 `general`、金融 `finance` 或代码 `code`，也可通过 [CLI 或 API](#automation) 的 `rubric` 选择。领域选择用于真实 JEV 的基础筛选规则，Demo 不执行领域语义判断；定制更多领域见 [垂域接入指南](docs/DOMAIN_GUIDE.md)。
 
 > **真实筛选会把选中的内容字段发送到所选第三方服务。** 请先自行脱敏并确认有权传输。模型的隐私检查发生在提交之后，不能代替上传前脱敏。网页「连接设置」里的访问令牌是 `JEV_API_TOKEN`，用于访问工作台，不是 OpenRouter / TypeSafe Key。Python CLI 不会自动读取 `.env` 文件。
 

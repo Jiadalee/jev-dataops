@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <meta name="description" content="JEV DataOps — 从数据筛选到模型评估的开放工作流。">
+  <meta name="description" content="JEV DataOps — 面向垂直领域的数据筛选、自动训练与模型评估开源工作台。">
   <title>JEV DataOps · 数据与模型工作台</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='12' fill='%23192d30'/%3E%3Cpath d='M12 12h17v10a10 10 0 0 1-17 7l4-5a4 4 0 0 0 7-2v-4H12z' fill='%23a4e6cd'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="/static/styles.css">
@@ -13,48 +13,82 @@
 <body>
   <a class="skip-link" href="#main-content">跳转到工作台</a>
   <aside class="sidebar" aria-label="主导航">
-    <a class="brand" href="/" aria-label="JEV DataOps 首页"><span class="brand-mark">j<span>e</span>v</span><span class="brand-label">DATAOPS</span></a>
-    <div class="workspace-label">WORKSPACE <span>01</span></div>
+    <a class="brand" href="/" aria-label="JEV DataOps 首页"><span class="brand-mark">j<span>e</span>v<span class="brand-period">.</span></span><span class="brand-label">DATAOPS</span></a>
+    <div class="workspace-switch"><span class="workspace-icon">W</span><div><strong>本地工作区</strong><small>Personal workspace</small></div><span class="workspace-indicator" aria-hidden="true">⌘</span></div>
+    <div class="workspace-label">工作空间 <span>WORKSPACE</span></div>
     <nav>
-      <a class="nav-item active" href="#main-content"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>流程工作台<span class="nav-dot"></span></a>
-      <a class="nav-item" href="#dataset-section"><svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v7c0 4 16 4 16 0V5M4 12v7c0 4 16 4 16 0v-7"/></svg>数据资产<span id="nav-dataset-count" class="nav-count">0</span></a>
-      <a class="nav-item" href="#run-section"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v6h6M4.9 9A8 8 0 1 1 4 14M12 7v5l3 2"/></svg>运行记录<span id="nav-run-count" class="nav-count">0</span></a>
+      <a class="nav-item active" href="#main-content" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>流程工作台</span><span class="nav-dot"></span></a>
+      <a class="nav-item" href="#dataset-section"><svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v7c0 4 16 4 16 0V5M4 12v7c0 4 16 4 16 0v-7"/></svg><span>数据资产</span><span id="nav-dataset-count" class="nav-count">0</span></a>
+      <a class="nav-item" href="#run-section"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v6h6M4.9 9A8 8 0 1 1 4 14M12 7v5l3 2"/></svg><span>运行记录</span><span id="nav-run-count" class="nav-count">0</span></a>
     </nav>
-    <div class="sidebar-note"><span class="eyebrow">THE COMPLETE LOOP</span><p>让好数据，<br>成为好模型。</p><div class="mini-flow"><span></span><i></i><span></span><i></i><span></span></div><small>Screen. Train. Evaluate.</small></div>
-    <div class="sidebar-bottom"><button type="button" id="settings-button" class="nav-item"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1m0-12.8-2.1 2.1m-8.6 8.6-2.1 2.1"/><circle cx="12" cy="12" r="5"/></svg>连接设置</button><div class="version"><span class="tiny-dot"></span>OPEN SOURCE <span id="version">v0.1</span></div></div>
+    <div class="sidebar-note"><div class="sidebar-note-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m12 3 2.6 6.4L21 12l-6.4 2.6L12 21l-2.6-6.4L3 12l6.4-2.6z"/></svg></div><span class="eyebrow">THE COMPLETE LOOP</span><p>每一份数据，<br>都有更好的可能。</p><div class="mini-flow" aria-hidden="true"><span></span><i></i><span></span><i></i><span></span></div><small>Screen. Train. Evaluate.</small></div>
+    <div class="sidebar-bottom"><button type="button" id="settings-button" class="nav-item"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1m0-12.8-2.1 2.1m-8.6 8.6-2.1 2.1"/><circle cx="12" cy="12" r="5"/></svg><span>连接设置</span></button><div class="version"><span class="tiny-dot"></span>OPEN SOURCE <span id="version">v0.1</span></div></div>
   </aside>
 
   <div class="app-shell">
-    <header class="topbar"><div class="breadcrumb">Workspace <span>/</span> <strong>流程工作台</strong></div><div class="topbar-right"><span class="connection" id="connection"><span class="tiny-dot"></span><span id="connection-label">正在连接</span></span><button class="icon-button" id="refresh-button" type="button" aria-label="刷新工作台" title="刷新工作台"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M5.3 7A8 8 0 0 1 19 6l1 6M4 12l1 6a8 8 0 0 0 13.7-1"/></svg></button><span class="avatar" aria-label="本地工作区">J</span></div></header>
+    <header class="topbar">
+      <div class="breadcrumb">工作空间 <span>/</span> <strong>流程工作台</strong></div>
+      <div class="topbar-right">
+        <a class="header-link docs-link" href="https://github.com/RenaGao/jev-dataops#readme" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v16M12 5C9 3 5 3 2 4v15c3-1 7-1 10 2 3-3 7-3 10-2V4c-3-1-7-1-10 1z"/></svg>使用文档</a>
+        <a class="header-link github-link" href="https://github.com/RenaGao/jev-dataops" target="_blank" rel="noopener noreferrer">GitHub <span aria-hidden="true">↗</span></a>
+        <span class="topbar-divider" aria-hidden="true"></span>
+        <span class="connection" id="connection"><span class="tiny-dot"></span><span id="connection-label">正在连接</span></span>
+        <button class="icon-button" id="refresh-button" type="button" aria-label="刷新工作台" title="刷新工作台"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M5.3 7A8 8 0 0 1 19 6l1 6M4 12l1 6a8 8 0 0 0 13.7-1"/></svg></button>
+      </div>
+    </header>
 
     <main id="main-content">
-      <section class="page-heading"><div><div class="eyebrow">DATA QUALITY → MODEL QUALITY</div><h1>每一次训练，从好数据开始<span>。</span></h1><p>上传数据，定义质量标准，让筛选、训练与评估连成一个闭环。</p></div><span class="workspace-tag"><span class="tiny-dot"></span> 本地工作区</span></section>
+      <section class="page-heading" aria-labelledby="page-title">
+        <div class="hero-copy"><span class="product-badge"><span class="tiny-dot"></span> JEV DATAOPS <span class="badge-divider">/</span> 垂直领域 AI 工作流</span><h1 id="page-title">让好数据，<span>成为好模型。</span></h1><p>接入业务数据，按领域标准筛选，训练并评估领域模型。</p><a class="domain-guide-link" href="https://github.com/RenaGao/jev-dataops/blob/main/docs/DOMAIN_GUIDE.md" target="_blank" rel="noopener noreferrer">阅读垂域接入指南 <span aria-hidden="true">↗</span></a></div>
+        <div class="hero-visual" aria-hidden="true">
+          <svg class="flow-illustration" viewBox="0 0 320 164" fill="none">
+            <defs><pattern id="hero-dots" width="16" height="16" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#d3ddd6"/></pattern></defs>
+            <rect x="0" y="0" width="320" height="164" rx="18" fill="url(#hero-dots)" stroke="none"/>
+            <path d="M68 47h30q20 0 20 20v15h30M68 117h30q20 0 20-20V82M198 82h25q15 0 15-15V47h26M238 82v20q0 15 15 15h11" stroke="#b2c4b8" stroke-width="1.5"/>
+            <rect x="17" y="24" width="60" height="48" rx="12" fill="#fff" stroke="#dce5dd"/><path d="M35 39h24M35 46h17M35 53h21" stroke="#82958a" stroke-width="2"/><circle cx="34" cy="39" r="1.5" fill="#4a765c" stroke="none"/>
+            <rect x="17" y="94" width="60" height="48" rx="12" fill="#fff" stroke="#dce5dd"/><path d="m36 111-7 7 7 7m14-14 7 7-7 7m-6-17-3 19" stroke="#82958a" stroke-width="1.5"/>
+            <rect x="137" y="53" width="66" height="66" rx="19" fill="#1f5e49" stroke="#164b3a"/><path d="m170 66 4.2 13.8L188 84l-13.8 4.2L170 102l-4.2-13.8L152 84l13.8-4.2z" fill="#cde8d5" stroke="none"/><circle cx="194" cy="58" r="5" fill="#daa777" stroke="#f5f6f1" stroke-width="3"/>
+            <rect x="260" y="24" width="44" height="46" rx="12" fill="#e8f0e7" stroke="#d0decf"/><path d="m272 46 7 7 13-14" stroke="#447856" stroke-width="2"/>
+            <rect x="260" y="94" width="44" height="46" rx="12" fill="#fff" stroke="#dce5dd"/><path d="M272 127v-10m9 10v-20m9 20v-15" stroke="#b8875f" stroke-width="3"/>
+            <circle cx="115" cy="82" r="3.5" fill="#91b7a0" stroke="#f6f7f2" stroke-width="2"/><circle cx="238" cy="82" r="3.5" fill="#91b7a0" stroke="#f6f7f2" stroke-width="2"/>
+          </svg>
+          <span>DATA <i>→</i> INTELLIGENCE</span>
+        </div>
+      </section>
+
+      <section class="overview-grid" aria-label="工作区概览">
+        <article class="overview-card"><div><span class="overview-label">数据集</span><strong id="overview-datasets">0</strong><p>当前已加载的数据资产</p></div><span class="overview-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v7c0 4 16 4 16 0V5M4 12v7c0 4 16 4 16 0v-7"/></svg></span></article>
+        <article class="overview-card"><div><span class="overview-label">数据记录</span><strong id="overview-records">0</strong><p>已加载数据集的记录总数</p></div><span class="overview-icon neutral"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3h11v18H5V6zM8 3v4H5M9 11h6M9 15h6"/></svg></span></article>
+        <article class="overview-card"><div><span class="overview-label">已完成运行</span><strong id="overview-completed">0</strong><p id="overview-run-note">最近载入 0 次运行</p></div><span class="overview-icon amber"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg></span></article>
+      </section>
 
       <div id="global-error" class="notice error-notice" role="alert" hidden></div>
 
       <section class="workflow-ribbon" aria-label="工作流阶段">
-        <div class="ribbon-step"><span class="step-number">01</span><div><strong>上传数据</strong><small>Bring your data</small></div></div><span class="ribbon-arrow" aria-hidden="true">→</span>
-        <div class="ribbon-step"><span class="step-number">02</span><div><strong>智能筛选</strong><small>Screen with JEV</small></div></div><span class="ribbon-arrow" aria-hidden="true">→</span>
-        <div class="ribbon-step"><span class="step-number">03</span><div><strong>数据评估</strong><small>Measure quality</small></div></div><span class="ribbon-arrow" aria-hidden="true">→</span>
-        <div class="ribbon-step"><span class="step-number">04</span><div><strong>自动训练</strong><small>Fine-tune a model</small></div></div><span class="ribbon-arrow" aria-hidden="true">→</span>
-        <div class="ribbon-step"><span class="step-number">05</span><div><strong>模型评估</strong><small>Validate the gain</small></div></div>
+        <div class="ribbon-step"><span class="step-number">01</span><div><strong>上传数据</strong><small>JSONL / CSV</small></div></div><span class="ribbon-arrow" aria-hidden="true">→</span>
+        <div class="ribbon-step"><span class="step-number">02</span><div><strong>智能筛选</strong><small>保留 · 复核 · 剔除</small></div></div><span class="ribbon-arrow" aria-hidden="true">→</span>
+        <div class="ribbon-step"><span class="step-number">03</span><div><strong>数据评估</strong><small>分析数据质量</small></div></div><span class="ribbon-arrow" aria-hidden="true">→</span>
+        <div class="ribbon-step"><span class="step-number">04</span><div><strong>自动训练</strong><small>Demo / LoRA</small></div></div><span class="ribbon-arrow" aria-hidden="true">→</span>
+        <div class="ribbon-step"><span class="step-number">05</span><div><strong>模型评估</strong><small>独立测试集验证</small></div></div>
       </section>
 
       <div class="setup-grid">
         <section class="card dataset-card" id="dataset-section" aria-labelledby="dataset-heading">
-          <div class="card-heading"><div class="title-with-number"><span class="section-number">01</span><div><h2 id="dataset-heading">准备你的数据</h2><p>数据，是整个流程的起点。</p></div></div><button class="text-button" type="button" id="example-button">使用示例 <span aria-hidden="true">↗</span></button></div>
+          <div class="card-heading"><div class="title-with-number"><span class="section-number">01</span><div><h2 id="dataset-heading">准备你的数据</h2><p>上传数据集，或用示例开始第一次实验。</p></div></div><button class="text-button" type="button" id="example-button">使用示例 <span aria-hidden="true">↗</span></button></div>
           <div class="drop-zone" id="drop-zone"><input id="file-input" type="file" accept=".jsonl,.csv" aria-label="上传 JSONL 或 CSV 数据集"><div class="upload-symbol"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 21V6m-6 6 6-6 6 6M7 21v5h18v-5"/></svg></div><strong id="upload-title">将数据文件拖拽到这里</strong><p>或 <span class="upload-link">点击选择文件</span></p><small id="upload-subtitle">JSONL / CSV · 流式读取，按批处理</small><div class="upload-progress" id="upload-progress" hidden><div></div></div></div>
-          <p class="data-hint"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 7v4M8 4.5v.5"/></svg>每行包含 instruction / output，或 prompt / response 字段。</p>
+          <p class="data-hint"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 7v4M8 4.5v.5"/></svg>支持文本、指令问答与多轮对话，字段格式见使用文档。</p>
           <div class="dataset-selection"><label for="dataset-select">当前数据集</label><select id="dataset-select" disabled><option value="">还没有数据集，请先上传</option></select></div>
           <div class="dataset-summary" id="dataset-summary" hidden><div><span class="file-icon">↳</span><span id="dataset-name"></span></div><span id="dataset-meta"></span></div>
           <div class="preview-wrap" id="preview-wrap" hidden><table id="preview-table"><caption class="sr-only">数据集前几条记录预览</caption><thead></thead><tbody></tbody></table></div>
-          <div class="empty-preview" id="empty-preview"><span class="empty-grid" aria-hidden="true">▤</span><span>上传后，在这里预览你的数据</span></div>
+          <div class="empty-preview" id="empty-preview"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="5" y="5" width="22" height="22" rx="3"/><path d="M5 13h22M13 13v14M5 20h22"/></svg><strong>数据预览将在这里显示</strong><span>还没有准备好数据？点击「使用示例」即可体验。</span></div>
         </section>
 
         <section class="card config-card" aria-labelledby="config-heading">
-          <div class="card-heading"><div class="title-with-number"><span class="section-number">02</span><div><h2 id="config-heading">定义这次工作流</h2><p>从小规模验证，到真实模型训练。</p></div></div><span class="small-tag">CONFIGURATION</span></div>
+          <div class="card-heading"><div class="title-with-number"><span class="section-number">02</span><div><h2 id="config-heading">定义这次工作流</h2><p>选择筛选策略，设定训练与评估方式。</p></div></div><span class="small-tag config-tag">工作流配置</span></div>
           <form id="pipeline-form">
-            <div class="form-grid"><div class="field"><label for="provider">筛选引擎</label><select id="provider" name="provider"><option value="demo">Demo · 本地规则验证</option><option value="openrouter" disabled>JEV · OpenRouter（未配置）</option><option value="typesafe" disabled>JEV · TypeSafe（未配置）</option></select></div><div class="field"><label for="trainer">训练后端</label><select id="trainer" name="trainer"><option value="demo">Demo · 流程验证</option><option value="huggingface" disabled>Hugging Face（未配置）</option></select></div></div>
+            <div class="form-grid"><div class="field"><label for="provider">筛选引擎</label><select id="provider" name="provider"><option value="demo">Demo · 本地规则验证</option><option value="openrouter" disabled>JEV · OpenRouter（未配置）</option><option value="typesafe" disabled>JEV · TypeSafe（未配置）</option></select></div><div class="field"><label for="rubric">应用领域</label><select id="rubric" name="rubric" aria-describedby="rubric-note"><option value="general">通用 · 基础规则</option><option value="finance">金融 · 领域基础规则</option><option value="code">代码 · 软件开发</option></select></div></div>
+            <p id="rubric-note" class="field-help">Demo 仅使用本地规则演示。接入 JEV 后，将按所选领域执行基础质量筛选。</p>
+            <div class="field trainer-field"><label for="trainer">训练后端</label><select id="trainer" name="trainer"><option value="demo">Demo · 流程验证</option><option value="huggingface" disabled>Hugging Face（未配置）</option></select></div>
             <div class="confidence-field"><div class="label-row"><label for="confidence">质量置信度阈值</label><output id="confidence-value" for="confidence">0.85</output></div><input id="confidence" name="confidence" type="range" min="0.5" max="0.99" step="0.01" value="0.85"><div class="range-labels"><span>更多样本</span><span>更高置信度</span></div></div>
             <div class="form-grid"><div class="field"><label for="concurrency">并发请求数 <span class="field-note">workers</span></label><input id="concurrency" name="concurrency" type="number" value="4" min="1" max="16" required></div><div class="field"><label for="max-requests">请求上限 <span class="field-note">budget</span></label><input id="max-requests" name="max_requests" type="number" value="1000" min="1" max="1000000" required></div></div>
             <label class="toggle-row" for="auto-train"><span><strong>筛选后自动训练与评估</strong><small>保留独立测试集，对比训练前后的表现</small></span><input id="auto-train" name="auto_train" type="checkbox" checked><span class="toggle" aria-hidden="true"></span></label>
@@ -65,23 +99,25 @@
         </section>
       </div>
 
-      <section class="runs-section" id="run-section" aria-labelledby="runs-heading"><div class="section-heading"><div><h2 id="runs-heading">运行与洞察 <span>Runs & insights</span></h2><p>每一步都有记录，每一次改进都可验证。</p></div><span class="small-tag" id="run-total">0 RUNS</span></div><div class="runs-grid">
+      <section class="runs-section" id="run-section" aria-labelledby="runs-heading"><div class="section-heading"><div><h2 id="runs-heading">运行与洞察 <span>Runs & insights</span></h2><p>跟踪流程进度，查看筛选结果与评估表现。</p></div><span class="small-tag" id="run-total">0 RUNS</span></div><div class="runs-grid">
         <aside class="card run-history" aria-label="工作流运行记录"><div class="history-heading"><h3>最近运行</h3><span id="history-count">0</span></div><div id="run-list" class="run-list"><div class="history-empty"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="M10 10h20v23H10zM15 7h10v6H15zM15 20h10M15 25h7"/></svg><strong>等待第一次运行</strong><p>启动工作流后，<br>完整记录会保存在这里。</p></div></div></aside>
         <section class="card run-detail" aria-label="所选运行详情">
-          <div id="run-empty" class="run-empty"><div class="orbit-illustration" aria-hidden="true"><span class="orbit orbit-one"></span><span class="orbit orbit-two"></span><span class="orbit-node node-one"></span><span class="orbit-node node-two"></span><span class="orbit-node node-three"></span><span class="orbit-center"><svg viewBox="0 0 30 30"><path d="m12 8 10 7-10 7z"/></svg></span></div><span class="eyebrow">YOUR NEXT EXPERIMENT STARTS HERE</span><h3>准备好，让数据流动起来</h3><p>运行后，你可以实时查看筛选结果、<br>训练进度与独立测试集上的模型表现。</p></div>
+          <div id="run-empty" class="run-empty"><div class="orbit-illustration" aria-hidden="true"><span class="orbit orbit-one"></span><span class="orbit orbit-two"></span><span class="orbit-node node-one"></span><span class="orbit-node node-two"></span><span class="orbit-node node-three"></span><span class="orbit-center"><svg viewBox="0 0 30 30"><path d="m12 8 10 7-10 7z"/></svg></span></div><span class="eyebrow">EVERY EXPERIMENT, A STEP FORWARD</span><h3>准备好，让数据流动起来</h3><p>运行后，你可以实时查看筛选结果、<br>训练进度与独立测试集上的模型表现。</p></div>
           <div id="run-content" hidden><div class="run-detail-heading"><div><div class="run-title-row"><h3 id="run-name"></h3><span id="run-status" class="status-badge"></span></div><p id="run-meta"></p></div><div class="run-actions"><button class="secondary-button small" type="button" id="retry-button" hidden>重新运行</button><button class="secondary-button small danger-text" type="button" id="cancel-button" hidden>停止运行</button></div></div>
             <div class="run-stage-track" id="stage-track" aria-label="流程进度"></div>
             <div class="progress-label"><span id="progress-label">等待运行</span><span id="progress-numbers">0 / 0</span></div><progress id="run-progress" value="0" max="100">0%</progress>
             <div id="run-error" class="notice error-notice" role="alert" hidden></div>
             <div class="stat-grid"><div class="stat-card"><span><i class="stat-dot keep"></i>保留 Keep</span><strong id="count-keep">—</strong><small>进入高质量数据集</small></div><div class="stat-card"><span><i class="stat-dot review"></i>待审 Review</span><strong id="count-review">—</strong><small>保留人工复核空间</small></div><div class="stat-card"><span><i class="stat-dot reject"></i>剔除 Reject</span><strong id="count-reject">—</strong><small>未通过质量标准</small></div></div>
+            <section class="chart-panel distribution-section" id="distribution-section" aria-labelledby="distribution-title" hidden><div class="subsection-heading"><h4 id="distribution-title">筛选结果分布</h4><span class="muted">当前运行</span></div><div id="distribution-chart"></div><p id="distribution-note" class="chart-note"></p></section>
             <div class="report-section" id="model-report-section" hidden><div class="subsection-heading"><h4>独立测试集评估</h4><span id="evaluation-kind" class="small-tag">EVALUATION</span></div><div id="model-metrics" class="model-metrics"></div><p id="evaluation-note" class="evaluation-note"></p></div>
+            <section class="chart-panel loss-chart-section" id="loss-chart-section" aria-labelledby="loss-chart-title" hidden><div class="subsection-heading"><h4 id="loss-chart-title">训练损失趋势</h4><span class="muted">Training loss</span></div><div id="loss-chart"></div><p id="loss-chart-note" class="chart-note"></p></section>
             <details class="data-report" id="data-report-section" hidden><summary>查看数据质量报告</summary><pre id="data-report"></pre></details>
             <div class="log-section"><div class="subsection-heading"><h4><span class="terminal-icon" aria-hidden="true">&gt;_</span>运行日志</h4><span id="log-count" class="muted">0 entries</span></div><div id="run-logs" class="run-logs" role="log" aria-label="运行日志" aria-live="polite"></div></div>
             <div class="artifact-section" id="artifact-section" hidden><div class="subsection-heading"><h4>产物与报告</h4><span class="muted">可下载，可复现</span></div><div id="artifacts" class="artifact-list"></div></div>
           </div>
         </section>
       </div></section>
-      <footer class="page-footer"><span><b>JEV</b> DataOps <span class="footer-divider">/</span> Open workflows. Measurable progress.</span><span>流式数据处理 <i>·</i> 本地任务执行 <i>·</i> 独立评估</span></footer>
+      <footer class="page-footer"><span><b>JEV</b> DataOps <span class="footer-divider">/</span> 让每一次改进，都有据可循。</span><a href="https://github.com/RenaGao/jev-dataops" target="_blank" rel="noopener noreferrer">开源共建 <span aria-hidden="true">↗</span></a></footer>
     </main>
   </div>
   <dialog id="settings-dialog" aria-labelledby="settings-title"><form id="settings-form"><div class="dialog-heading"><h2 id="settings-title">连接设置</h2><button type="button" class="icon-button" id="close-settings" aria-label="关闭连接设置">×</button></div><p>如果服务端设置了访问令牌，在此输入。令牌仅保存在当前标签页会话中。</p><label for="api-token">API 访问令牌</label><input id="api-token" type="password" autocomplete="off" placeholder="本地未启用认证时，可留空"><p class="settings-help">JEV API Key 与训练模型路径由服务端环境变量配置。</p><button type="submit" class="primary-button">保存并连接</button></form></dialog>
