@@ -165,19 +165,24 @@ The default general rubric assesses content quality, apparent privacy exposure, 
 
 | Decision | Meaning | What happens next |
 | --- | --- | --- |
-| **Keep** | Every dimension meets its retention criteria and confidence threshold | Eligible for the training candidate set once screening completes |
-| **Review** | A judgment is uncertain, confidence is low, or a record / response needs checking | Written to the review file; excluded from automatic training |
+| **Keep** | Every dimension's answer falls in its keep set and passes that dimension's gate | Eligible for the training candidate set once screening completes |
+| **Review** | A judgment is uncertain, a gate was not met, or a record / response needs checking | Written to the review file; excluded from automatic training |
 | **Reject** | At least one dimension rejects the record, or a local rejection rule applies | Written to the rejection file with a recorded reason |
 
 Decision precedence is **Reject → Review → Keep**. If one dimension requests review but another rejects, the record is rejected.
+
+Each dimension has its own gate, declared in the rubric. JEV returns a probability for every option; a row is kept on a dimension when the argmax is in the keep set, the mass on the keep set reaches the gate's `min_probability`, and the mass on the reject set stays under `max_reject_probability`. A gate may also require JEV's separate `confidence` field to reach the run's confidence threshold (`use_confidence`). In the bundled rubrics `privacy` does; `quality` and `trainability` do not, because on clearly good rows JEV's confidence for those sits near 0.5 while the probability on the chosen answer is 0.7–0.9, and gating on it sent most of a clean dataset to review. The effective settings of every run are written to `data_report.json` under `thresholds`, and each audit row records which gate, if any, turned a keep into a review.
 
 The original upload is retained. Download `review.jsonl` for manual inspection; the workbench does not yet offer per-record annotation or automatic feedback into training. Corrected records can be uploaded as a new dataset.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| Confidence threshold | `0.85` | Minimum confidence for a judgment; it does not mean “85% of samples are correct.” Demo does not use this threshold |
+| Confidence threshold | `0.85` | Minimum for JEV's `confidence` field on dimensions whose gate uses it (`privacy` in the bundled rubrics); it does not mean “85% of samples are correct.” Demo does not use this threshold |
 | Concurrent requests | `4` | Concurrent screening tasks; live throughput depends on provider quotas |
 | Request limit | `1000` | Maximum HTTP requests for this run, including retries; not a sample count or spending cap |
+| Model | provider alias | `model` in the API, `--model` in the CLI: pin a JEV version such as `typesafe/jev-1.13-20260917` so a run's cache holds one model's answers. `data_report.json` lists the resolved models under `models` either way |
+
+A malformed JEV answer is asked for once more before the row is sent to review with the validation reason in the audit. Rows JEV never answered for are counted under `unevaluated`; when they exceed 5% of a run, the run is `complete` but not `training_ready`, and automatic training waits for a retry. Token counts and the provider's reported cost are summed under `usage`; cache hits cost nothing and are not counted.
 
 Incomplete screening due to an exhausted request budget, authentication failure, or network error blocks automatic training. Under **Application domain**, choose General (`general`), Finance (`finance`), or Code (`code`). You can also select the rubric through the [CLI or API](#automation). Domain selection configures the starter rubric for live JEV screening; Demo does not perform semantic domain assessment. See the [Domain adaptation guide](docs/DOMAIN_GUIDE.md) to customize additional domains.
 
@@ -223,7 +228,7 @@ The default small model is intended to validate the execution path. Set `JEV_BAS
 
 **The defaults are a small validation run: 1 epoch, at most 20 training steps, batch size 4, and sequence length 256.** Sequence length counts tokenizer tokens for language models and UTF-8 bytes for Demo. Training stops at the epoch or step limit, and long records are truncated. A completed run therefore does not mean an entire large dataset was used for training. Actual steps, record visits, and losses are saved in `training_report.json`.
 
-Use the [HTTP or Python API](#automation) to adjust parameters for a full experiment. The browser and CLI currently have no training-step input. Training uses full-text causal SFT: both prompt and response contribute to loss. Answer-only loss, DPO / RLHF, distributed training, and automatic model publishing are not implemented.
+Use the [HTTP or Python API](#automation) or the CLI's training flags to adjust parameters for a full experiment; the browser has no training-step input. Rows with a prompt (instruction/output, prompt/response, conversations ending in an assistant turn) are rendered with the tokenizer's chat template when it has one, so the adapter learns the format the model is served in, and by default only the answer tokens contribute to the loss (`loss_mask: "answer"`; `"full"` restores plain causal SFT). Bare passages are learned in full. On CUDA the frozen base is held in bfloat16; the LoRA weights stay in float32. The learning rate warms up over the first tenth of the steps and decays linearly. `training_report.json` records the masking counts, dtype, LoRA rank and alpha, and whether a chat template was used. DPO / RLHF, distributed training, and automatic model publishing are not implemented.
 
 The resulting `model/` contains **LoRA adapters and tokenizer files**. Inference still requires the original base model. See the [training guide](docs/TRAINING.md) for additional configuration and limitations.
 
@@ -299,7 +304,7 @@ jev-dataops run --input /data/corpus.jsonl --output /data/llm-run-001 \
 
 Replace the paths with your own input files and output directories. Set the live request limit according to dataset size and budget. A limit of 1,000 does not guarantee that 1,000 records can be screened because retries also count. CLI outputs use `screening/` and `training/` under the specified directory; the browser uses `training-1/` for its first attempt.
 
-Run `jev-dataops run --help` to see supported options. CLI training uses the small defaults described above and does not currently accept `--max-steps` or `--epochs`.
+Run `jev-dataops run --help` to see supported options. Screening takes `--model`, `--min-chars`, `--max-chars` and `--timeout`; training takes `--epochs`, `--max-steps`, `--batch-size`, `--learning-rate`, `--max-seq-length`, `--seed`, `--lora-r`, `--lora-alpha` and `--loss-mask answer|full`, with the same small defaults as the browser.
 
 ### Configure a training experiment through HTTP
 
@@ -340,7 +345,7 @@ See the running service's [Swagger documentation](http://localhost:8000/docs) fo
 
 Streaming reads, bounded concurrency, and disk-backed SQLite deduplication and caching avoid loading the whole dataset into Python memory. **This is currently a single-host workbench:** it executes one complete run at a time, with concurrent screening inside each run. Distributed queues, object storage, and resumable chunked uploads are not implemented. The model itself must still fit in memory / VRAM.
 
-One reproducible local benchmark screened **100,000 synthetic records in approximately 93 seconds, with peak process memory of approximately 50 MiB**. This measures local rules and the disk pipeline, not JEV API throughput or language-model training speed. See the [benchmark notes](docs/BENCHMARKS.md) for the environment, training steps, and reproduction commands.
+One reproducible local benchmark screened **100,000 synthetic records in approximately 21 seconds, with peak process memory of approximately 38 MiB**. Cache and audit writes are committed in groups of 500 rows or once a second rather than once per row, and each screening worker keeps one TLS connection to the provider open across requests. This measures local rules and the disk pipeline, not JEV API throughput or language-model training speed. See the [benchmark notes](docs/BENCHMARKS.md) for the environment, training steps, and reproduction commands.
 
 Before scaling up, use a small sample to check the schema, screening rubric, and grouping. Then increase request budget and concurrency, followed by training steps. Improve the data based on reviewed examples from the `review` and `reject` partitions rather than retention rate alone. Reserve disk space for original uploads, partitions, audit logs, caches, training splits, and model artifacts.
 

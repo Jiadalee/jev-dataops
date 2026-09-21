@@ -160,31 +160,43 @@ def test_existing_output_is_not_overwritten(tmp_path):
     assert (output / "training_report.json").read_bytes() == original
 
 
-def test_huggingface_real_lora_with_local_synthetic_fixture(tmp_path, monkeypatch):
-    """Exercise actual forward/backward/evaluation, with no downloads or pretrained-quality claim."""
-    pytest.importorskip("torch")
-    pytest.importorskip("peft")
-    pytest.importorskip("transformers")
+def synthetic_base(tmp_path, chat_template=None):
     from tokenizers import Tokenizer
     from tokenizers.models import WordLevel
     from tokenizers.pre_tokenizers import Whitespace
     from transformers import GPT2Config, GPT2LMHeadModel, PreTrainedTokenizerFast
 
     base = tmp_path / "synthetic-gpt2"
-    vocabulary = {word: index for index, word in enumerate(
-        ["[UNK]", "[EOS]", "Example", ":", "reliable", "data", "makes", "a", "useful", "language", "model", "."]
-        + [str(i) for i in range(30)])}
+    words = ["[UNK]", "[EOS]", "Example", ":", "reliable", "data", "makes", "a", "useful", "language", "model", ".",
+             "user", "assistant", "Question", "Answer", "<turn>", "</turn>"] + [str(i) for i in range(30)]
+    vocabulary = {word: index for index, word in enumerate(words)}
     backend = Tokenizer(WordLevel(vocab=vocabulary, unk_token="[UNK]"))
     backend.pre_tokenizer = Whitespace()
     tokenizer = PreTrainedTokenizerFast(tokenizer_object=backend, unk_token="[UNK]", eos_token="[EOS]", pad_token="[EOS]")
+    # Set explicitly in both cases: some transformers versions keep the last template on the class.
+    tokenizer.chat_template = chat_template
     tokenizer.save_pretrained(base)
     model = GPT2LMHeadModel(GPT2Config(vocab_size=len(vocabulary), n_positions=64, n_ctx=64,
                                      n_embd=16, n_layer=1, n_head=2, bos_token_id=1,
                                      eos_token_id=1, pad_token_id=1))
     model.save_pretrained(base, safe_serialization=True)
+    return base
+
+
+def huggingface_environment(monkeypatch, base):
+    pytest.importorskip("torch")
+    pytest.importorskip("peft")
+    pytest.importorskip("transformers")
     monkeypatch.setenv("JEV_BASE_MODEL", str(base))
     monkeypatch.setenv("JEV_MODEL_LOCAL_ONLY", "1")
     monkeypatch.setenv("JEV_TRAIN_DEVICE", "cpu")
+
+
+def test_huggingface_real_lora_with_local_synthetic_fixture(tmp_path, monkeypatch):
+    """Exercise actual forward/backward/evaluation, with no downloads or pretrained-quality claim."""
+    pytest.importorskip("torch")
+    pytest.importorskip("transformers")
+    huggingface_environment(monkeypatch, synthetic_base(tmp_path))
     source = write_jsonl(tmp_path / "keep.jsonl", records(20))
     result = train_and_evaluate(source, tmp_path / "run", {
         "trainer": "huggingface", "max_steps": 1, "max_seq_length": 32, "batch_size": 2,
@@ -195,8 +207,78 @@ def test_huggingface_real_lora_with_local_synthetic_fixture(tmp_path, monkeypatc
     assert result["training_record_visits"] == 2
     assert 0 < result["trainable_parameters"] < result["total_parameters"]
     assert result["device"] == "cpu"
+    assert result["dtype"] == "float32"
     assert math.isfinite(result["baseline_loss"])
     assert math.isfinite(result["trained_loss"])
     assert result["evaluation_tokens"]["test"] > 0
+    # Bare passages have no prompt, so nothing was masked and the report says so.
+    assert result["masking"]["rows_with_masked_prompt"] == 0
+    assert any("effectively full-text" in note for note in result["limitations"])
+    assert result["lora"] == {"r": 8, "alpha": 16, "dropout": 0.05, "target_modules": "all-linear"}
+    assert result["loss_history"][0]["lr"] > 0
     assert (tmp_path / "run" / "model" / "adapter_model.safetensors").is_file()
     assert (tmp_path / "run" / "model" / "tokenizer.json").is_file()
+
+
+def conversations(count=20):
+    return [{"id": str(i), "messages": [{"role": "user", "content": f"Question {i} {i + 1} {i + 2}"},
+                                        {"role": "assistant", "content": f"Answer {i}"}]} for i in range(count)]
+
+
+def test_answer_only_loss_masks_the_prompt_without_a_chat_template(tmp_path, monkeypatch):
+    pytest.importorskip("torch")
+    pytest.importorskip("transformers")
+    huggingface_environment(monkeypatch, synthetic_base(tmp_path))
+    source = write_jsonl(tmp_path / "keep.jsonl", conversations())
+    result = train_and_evaluate(source, tmp_path / "run", {
+        "trainer": "huggingface", "max_steps": 2, "max_seq_length": 32, "batch_size": 2, "lora_r": 4, "lora_alpha": 8,
+    })
+    assert result["chat_template"] is False
+    assert result["loss_mask"] == "answer"
+    assert result["masking"]["rows_with_masked_prompt"] == 4
+    # "user : Question i j k assistant :" is masked; "Answer i [EOS]" is learned.
+    assert result["masking"]["prompt_tokens_masked"] == 4 * 8
+    assert result["masking"]["tokens_learned"] == 4 * 3
+    assert result["metric_unit"].endswith("per answer token")
+    assert result["lora"]["r"] == 4
+    # The held-out count is answer tokens only: "Answer", "i" and EOS for each row.
+    test_rows = read_jsonl(tmp_path / "run" / "test.jsonl")
+    assert result["evaluation_tokens"]["test"] == 3 * len(test_rows)
+
+
+def test_chat_template_is_used_when_the_tokenizer_has_one(tmp_path, monkeypatch):
+    pytest.importorskip("torch")
+    pytest.importorskip("transformers")
+    template = ("{% for m in messages %}<turn> {{ m['role'] }} : {{ m['content'] }} </turn> {% endfor %}"
+                "{% if add_generation_prompt %}<turn> assistant : {% endif %}")
+    huggingface_environment(monkeypatch, synthetic_base(tmp_path, template))
+    source = write_jsonl(tmp_path / "keep.jsonl", conversations())
+    result = train_and_evaluate(source, tmp_path / "run", {
+        "trainer": "huggingface", "max_steps": 1, "max_seq_length": 32, "batch_size": 2,
+    })
+    assert result["chat_template"] is True
+    assert result["masking"]["rows_with_masked_prompt"] == 2
+    # "<turn> user : Question i j k </turn> <turn> assistant :" is the prompt; the
+    # whitespace pre-tokenizer cuts each marker into three pieces, so 17 tokens.
+    assert result["masking"]["prompt_tokens_masked"] == 2 * 17
+    # "Answer i </turn> [EOS]" is learned: 2 + 3 + 1 tokens.
+    assert result["masking"]["tokens_learned"] == 2 * 6
+
+
+def test_full_loss_mask_learns_every_token(tmp_path, monkeypatch):
+    pytest.importorskip("torch")
+    pytest.importorskip("transformers")
+    huggingface_environment(monkeypatch, synthetic_base(tmp_path))
+    source = write_jsonl(tmp_path / "keep.jsonl", conversations())
+    result = train_and_evaluate(source, tmp_path / "run", {
+        "trainer": "huggingface", "max_steps": 1, "max_seq_length": 32, "batch_size": 2, "loss_mask": "full",
+    })
+    assert result["masking"]["rows_with_masked_prompt"] == 0
+    assert result["masking"]["tokens_learned"] == 2 * 11
+    assert result["limitations"][0].startswith("Full-text")
+
+
+@pytest.mark.parametrize("config", [{"lora_r": 0}, {"lora_alpha": 5000}, {"loss_mask": "prompt"}])
+def test_lora_config_validation(config):
+    with pytest.raises(ValueError):
+        validate_training_config(config)
