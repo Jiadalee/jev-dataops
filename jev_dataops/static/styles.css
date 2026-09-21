@@ -79,7 +79,7 @@ input[type="checkbox"] { accent-color: var(--green); }
 .brand-label { font-size: 11px; font-weight: 500; letter-spacing: 2px; border-left: 1px solid #52675b; padding-left: 14px; margin-top: 8px; }
 .workspace-switch { display: flex; align-items: center; gap: 10px; margin-bottom: 33px; padding: 13px 10px; border: 1px solid #365046; border-radius: 10px; background: #1d362e; }
 .workspace-icon { width: 32px; height: 32px; border-radius: 7px; display: grid; place-items: center; flex: none; background: #d9e6ce; color: #314c35; font-size: 13px; font-weight: 700; }
-.workspace-switch strong { display: block; font-size: 13px; font-weight: 550; color: #edf1e7; }
+.workspace-switch strong { display: block; line-height: 1.35; font-size: 13px; font-weight: 550; color: #edf1e7; }
 .workspace-switch small { display: block; font-size: 10px; color: #a7bcb0; margin-top: 2px; }
 .workspace-indicator { margin-left: auto; color: #8b9f91; font-size: 16px; }
 .workspace-label { display: flex; justify-content: space-between; font-size: 11px; color: #a2b7aa; padding: 0 13px; margin-bottom: 13px; }
@@ -133,7 +133,7 @@ main { padding: 28px 36px 24px; max-width: 1600px; margin: 0 auto; scroll-margin
 .product-badge .tiny-dot { width: 5px; height: 5px; }
 .badge-divider { color: #97a68d; margin: 0 2px; }
 h1 { font-size: clamp(26px, 2.35vw, 36px); font-weight: 620; line-height: 1.35; letter-spacing: -1.3px; }
-h1 > span { color: #426a41; }
+h1 > span { display: block; color: #426a41; }
 .page-heading p { margin-top: 12px; color: #687860; font-size: 13px; line-height: 1.8; }
 .domain-guide-link { display: inline-flex; align-items: center; gap: 9px; min-height: 36px; margin-top: 5px; font-size: 11px; color: #4b7042; }
 .domain-guide-link:hover { color: #234d2b; }
@@ -145,7 +145,7 @@ h1 > span { color: #426a41; }
 .overview-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-bottom: 22px; }
 .overview-card { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 19px 21px; background: #fff; border: 1px solid var(--line); border-radius: 11px; box-shadow: 0 2px 3px #26372503; min-width: 0; }
 .overview-card > div { min-width: 0; }
-.overview-label { color: #52634d; font-size: 12px; }
+.overview-label { display: block; line-height: 1.4; color: #52634d; font-size: 12px; }
 .overview-card strong { display: block; font-size: 29px; line-height: 1.3; margin: 6px 0 5px; font-weight: 600; letter-spacing: -.7px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .overview-card p { font-size: 11px; color: #68775d; line-height: 1.6; }
 .overview-icon { display: grid; place-items: center; width: 36px; height: 36px; flex: none; border: 1px solid #dfe8d6; border-radius: 9px; background: #eff4e9; color: #658653; }
@@ -158,7 +158,7 @@ h1 > span { color: #426a41; }
 .ribbon-step { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .step-number { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; width: 32px; height: 32px; border: 1px solid #dbe4d1; border-radius: 8px; display: grid; place-items: center; background: #edf3e5; color: #6a8059; flex: none; }
 .ribbon-step:first-child .step-number { background: #2b6044; border-color: #2b6044; color: #edf7e5; }
-.ribbon-step strong { display: block; font-size: 12px; font-weight: 550; white-space: nowrap; }
+.ribbon-step strong { display: block; line-height: 1.4; font-size: 12px; font-weight: 550; white-space: nowrap; }
 .ribbon-step small { display: block; font-size: 10px; color: #68775d; margin-top: 4px; white-space: nowrap; }
 .ribbon-arrow { color: #adb99f; font-size: 16px; }
 .setup-grid { display: grid; grid-template-columns: minmax(0, 1.07fr) minmax(0, 1fr); gap: 22px; align-items: stretch; }
@@ -168,6 +168,7 @@ h1 > span { color: #426a41; }
 .title-with-number { display: flex; align-items: flex-start; gap: 11px; min-width: 0; }
 .section-number { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; color: #789267; width: 32px; height: 34px; background: #edf3e5; border: 1px solid #e3ead9; border-radius: 7px; display: grid; place-items: center; flex: none; }
 h2 { font-size: 17px; font-weight: 620; letter-spacing: -.25px; line-height: 1.5; }
+.card-heading .title-with-number > div { min-width: 0; }
 .card-heading p { margin-top: 5px; font-size: 12px; color: #68775d; line-height: 1.7; }
 .text-button { min-height: 44px; padding: 6px 0 6px 8px; background: none; font-size: 12px; color: #3e7147; white-space: nowrap; font-weight: 550; }
 .text-button span { margin-left: 4px; font-size: 17px; font-weight: 400; }
@@ -539,7 +540,7 @@ dialog .settings-help { font-size: 12px; margin-top: 12px; }
   .nav-count { font-size: 10px; }
   .brand-mark { font-size: 31px; }
   .brand-label { font-size: 9px; }
-  .sidebar-bottom .nav-item { font-size: 11px; padding: 8px; }
+  .sidebar-bottom .nav-item { font-size: 11px; padding: 8px; gap: 6px; }
   .topbar { min-height: 59px; padding: 0 16px; }
   .topbar-right { gap: 14px; }
   .header-link { font-size: 11px; }
@@ -559,7 +560,7 @@ dialog .settings-help { font-size: 12px; margin-top: 12px; }
   .overview-card p { font-size: 10px; line-height: 1.65; }
   .workflow-ribbon { padding: 14px 8px; gap: 2px; }
   .ribbon-step { gap: 8px; }
-  .ribbon-step strong { font-size: 10px; }
+  .ribbon-step strong { font-size: 10px; white-space: normal; }
   .ribbon-arrow { font-size: 11px; }
   .step-number { width: 27px; height: 27px; font-size: 10px; }
   .setup-grid { gap: 18px; }

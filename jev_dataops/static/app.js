@@ -9,14 +9,14 @@ const state = {
   uploading: false, submitting: false, polling: false, timer: null,
   toastTimer: null, logsSignature: "", artifactsSignature: "", actionPending: false, settlePending: false, lossChartWidth: null,
 };
-const statuses = { queued: "等待中", running: "运行中", completed: "已完成", failed: "失败", cancelled: "已取消" };
-const rubricNames = { general: "通用", finance: "金融", code: "代码" };
+const statuses = { queued: "Queued", running: "Running", completed: "Completed", failed: "Failed", cancelled: "Canceled" };
+const rubricNames = { general: "General", finance: "Finance", code: "Code" };
 const stages = [
-  { key: "upload", label: "上传数据" }, { key: "screening", label: "智能筛选" },
-  { key: "data_evaluation", label: "数据评估" }, { key: "training", label: "自动训练" },
-  { key: "model_evaluation", label: "模型评估" },
+  { key: "upload", label: "Upload" }, { key: "screening", label: "Screen" },
+  { key: "data_evaluation", label: "Data eval" }, { key: "training", label: "Train" },
+  { key: "model_evaluation", label: "Model eval" },
 ];
-const number = (value) => Number.isFinite(Number(value)) ? Number(value).toLocaleString("zh-CN") : "—";
+const number = (value) => Number.isFinite(Number(value)) ? Number(value).toLocaleString("en-US") : "—";
 const formatMetric = (value) => typeof value === "number" && Number.isFinite(value) ? value.toFixed(4) : "—";
 const finiteNonnegative = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0;
 const isActive = (run) => run && ["running", "queued"].includes(run.status);
@@ -30,7 +30,7 @@ function displayDate(value, timeOnly = false) {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
-  return new Intl.DateTimeFormat("zh-CN", timeOnly ? { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false } : { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(date);
+  return new Intl.DateTimeFormat("en-US", timeOnly ? { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false } : { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(date);
 }
 function fileSize(value) {
   if (!Number.isFinite(Number(value))) return "—";
@@ -47,7 +47,7 @@ function showToast(message, error = false) {
   state.toastTimer = setTimeout(() => { $("toast").hidden = true; }, error ? 6500 : 3500);
 }
 function errorMessage(error) {
-  return error instanceof TypeError ? "无法连接到服务，请检查服务是否启动，然后重试。" : error.message || "操作失败，请重试。";
+  return error instanceof TypeError ? "Cannot connect to the server. Check that it is running and try again." : error.message || "Something went wrong. Please try again.";
 }
 function showError(error) {
   const message = errorMessage(error);
@@ -57,7 +57,7 @@ function showError(error) {
 }
 function setConnection(online) {
   $("connection").classList.toggle("offline", !online);
-  $("connection-label").textContent = online ? "服务已连接" : "连接中断";
+  $("connection-label").textContent = online ? "Connected" : "Disconnected";
 }
 async function request(path, { method = "GET", body, raw = false } = {}) {
   const headers = {};
@@ -70,17 +70,17 @@ async function request(path, { method = "GET", body, raw = false } = {}) {
       const payload = await response.json();
       const detail = payload.detail || payload.message;
       if (typeof detail === "string") message = detail;
-      else if (Array.isArray(detail)) message = detail.map((item) => `${(item.loc || []).filter((key) => key !== "body").join(".")}: ${item.msg}`).join("；");
+      else if (Array.isArray(detail)) message = detail.map((item) => `${(item.loc || []).filter((key) => key !== "body").join(".")}: ${item.msg}`).join("; ");
     } catch (_) { /* Keep the HTTP error when the response is not JSON. */ }
-    if (response.status === 401 || response.status === 403) message = "访问令牌无效或缺失。请在「连接设置」中输入服务端配置的令牌。";
+    if (response.status === 401 || response.status === 403) message = "The access token is missing or invalid. Enter your server token in Connection settings.";
     throw new Error(message);
   }
   return raw ? response : response.json();
 }
 function updateStartState() {
   $("start-button").disabled = !state.datasetId || state.loading || state.uploading || state.submitting;
-  $("start-button").querySelector("span").textContent = state.submitting ? "正在创建工作流…" : "启动工作流";
-  $("start-hint").textContent = state.datasetId ? "任务与产物保存在服务端，可随时返回查看" : "先添加一个数据集，即可开始";
+  $("start-button").querySelector("span").textContent = state.submitting ? "Creating workflow…" : "Start workflow";
+  $("start-hint").textContent = state.datasetId ? "Runs and artifacts are saved on the server. Come back anytime." : "Add a dataset to get started";
 }
 function applyHealth(health) {
   state.health = health;
@@ -88,14 +88,14 @@ function applyHealth(health) {
   for (const [value, name] of [["openrouter", "OpenRouter"], ["typesafe", "TypeSafe"]]) {
     const option = $("provider").querySelector(`option[value="${value}"]`);
     option.disabled = !health.providers?.[value];
-    option.textContent = `JEV · ${name}${option.disabled ? "（未配置）" : ""}`;
+    option.textContent = `JEV · ${name}${option.disabled ? " (not configured)" : ""}`;
   }
   const trainer = $("trainer").querySelector('option[value="huggingface"]');
   trainer.disabled = !health.training?.huggingface;
-  trainer.textContent = `Hugging Face · LoRA${trainer.disabled ? "（未安装）" : ""}`;
+  trainer.textContent = `Hugging Face · LoRA${trainer.disabled ? " (not installed)" : ""}`;
   if ($( "provider").selectedOptions[0]?.disabled) $("provider").value = "demo";
   if ($( "trainer").selectedOptions[0]?.disabled) $("trainer").value = "demo";
-  if (health.max_upload_mb) $("upload-subtitle").textContent = `JSONL / CSV · 最大 ${number(health.max_upload_mb)} MB · 流式读取`;
+  if (health.max_upload_mb) $("upload-subtitle").textContent = `JSONL / CSV · Up to ${number(health.max_upload_mb)} MB · Streamed upload`;
   updateModeNotice();
 }
 function updateModeNotice() {
@@ -107,15 +107,15 @@ function updateModeNotice() {
   $("mode-notice").classList.toggle("real-mode", provider !== "demo");
   $("trainer").disabled = !autoTrain;
   if (provider === "demo") {
-    title.textContent = autoTrain && trainer === "huggingface" ? "本地规则筛选 + 大模型训练" : "当前为 Demo 模式";
+    title.textContent = autoTrain && trainer === "huggingface" ? "Local screening + LLM training" : "Demo mode";
     description.textContent = autoTrain && trainer === "huggingface"
-      ? `筛选使用本地规则，不调用 JEV；保留数据将用于 ${state.health?.training?.base_model || "已配置模型"} 的 LoRA 训练。`
-      : autoTrain ? "本地规则筛选与字节二元统计模型验证，不调用 JEV，也不训练大模型。" : "仅进行本地规则筛选与数据评估，不调用 JEV，也不训练模型。";
+      ? `Local rules screen the data without JEV. Retained records train a LoRA adapter for ${state.health?.training?.base_model || "the configured model"}.`
+      : autoTrain ? "Local rules and a byte-bigram model validate the pipeline. No JEV calls or LLM training." : "Local screening and data evaluation only. No JEV calls or model training.";
   } else {
-    title.textContent = "已启用 JEV 在线筛选";
-    description.textContent = !autoTrain ? "数据内容将发送至所选第三方 JEV 服务；请仅提交有权共享的数据。请求上限用于约束 API 预算。"
-      : trainer === "demo" ? "数据内容将发送至所选第三方 JEV 服务；请仅提交有权共享的数据。后续验证字节统计模型，不训练大模型。"
-      : `数据内容发送至第三方 JEV 服务，请仅提交有权共享的数据。随后训练 ${state.health?.training?.base_model || "已配置模型"} 的 LoRA 适配器。`;
+    title.textContent = "JEV screening enabled";
+    description.textContent = !autoTrain ? "Data is sent to your selected JEV provider. Only submit data you can share. The request limit caps API usage."
+      : trainer === "demo" ? "Data is sent to your selected JEV provider. Only submit data you can share. A byte-bigram model validates training; no LLM is trained."
+      : `Data is sent to your JEV provider. Only submit data you can share. Retained records train a LoRA adapter for ${state.health?.training?.base_model || "the configured model"}.`;
   }
   updateRubricNotice();
 }
@@ -123,11 +123,11 @@ function updateRubricNotice() {
   const rubric = $("rubric").value;
   const name = rubricNames[rubric] || rubricNames.general;
   if ($("provider").value === "demo") {
-    $("rubric-note").textContent = `已选择${name}领域。Demo 仅演示本地规则，不解释领域语义；接入 JEV 后才会应用对应领域的基础筛选。`;
+    $("rubric-note").textContent = `${name} selected. Demo uses local rules without domain understanding. Connect JEV to apply basic domain screening.`;
     return;
   }
-  const limitation = rubric === "code" ? "不执行代码，也不验证领域事实。" : rubric === "finance" ? "不核验金融事实，也不构成专业评审。" : "不验证领域事实，也不执行代码。";
-  $("rubric-note").textContent = `${name}领域从内容质量、隐私、可训练性三个维度进行基础筛选；${limitation}`;
+  const limitation = rubric === "code" ? "It does not execute code or verify domain facts." : rubric === "finance" ? "It does not verify financial facts or replace expert review." : "It does not verify domain facts or execute code.";
+  $("rubric-note").textContent = `${name} screening checks content quality, privacy, and trainability. ${limitation}`;
 }
 function renderOverview() {
   $("overview-datasets").textContent = number(state.datasets.length);
@@ -135,14 +135,14 @@ function renderOverview() {
   $("overview-records").textContent = rows.every(finiteNonnegative) ? number(rows.reduce((sum, value) => sum + value, 0)) : "—";
   $("overview-completed").textContent = number(state.runs.filter((run) => run.status === "completed").length);
   const active = state.runs.filter(isActive).length;
-  $("overview-run-note").textContent = `最近载入 ${number(state.runs.length)} 次运行${active ? ` · ${number(active)} 个进行中` : ""}`;
+  $("overview-run-note").textContent = `${number(state.runs.length)} recent run${state.runs.length === 1 ? "" : "s"} loaded${active ? ` · ${number(active)} active` : ""}`;
 }
 function renderDatasets() {
   const select = $("dataset-select");
   select.replaceChildren();
-  if (!state.datasets.length) select.append(el("option", "", "还没有数据集，请先上传"));
+  if (!state.datasets.length) select.append(el("option", "", "Upload a dataset to get started"));
   for (const dataset of state.datasets) {
-    const option = el("option", "", `${dataset.name} · ${number(dataset.rows)} 行`);
+    const option = el("option", "", `${dataset.name} · ${number(dataset.rows)} rows`);
     option.value = dataset.id;
     select.append(option);
   }
@@ -162,7 +162,7 @@ function renderDatasetPreview() {
   if (!dataset) return;
   $("dataset-name").textContent = dataset.name;
   $("dataset-name").title = dataset.name;
-  $("dataset-meta").textContent = `${number(dataset.rows)} 行 · ${fileSize(dataset.size)}`;
+  $("dataset-meta").textContent = `${number(dataset.rows)} rows · ${fileSize(dataset.size)}`;
   const table = $("preview-table");
   const head = table.querySelector("thead"), body = table.querySelector("tbody");
   head.replaceChildren(); body.replaceChildren();
@@ -197,7 +197,7 @@ function renderRunList() {
     button.append(el("div", "run-list-name", run.name || `Run ${run.id.slice(0, 8)}`));
     const meta = el("div", "run-list-meta");
     meta.append(el("span", `status-badge status-${Object.hasOwn(statuses, run.status) ? run.status : "queued"}`, statuses[run.status] || run.status), el("span", "", displayDate(run.created_at)));
-    button.append(meta, el("div", "run-list-provider", `${run.config?.provider === "demo" ? "DEMO · 本地验证" : `JEV · ${run.config?.provider || "—"}`} / ${run.id.slice(0, 8)}`));
+    button.append(meta, el("div", "run-list-provider", `${run.config?.provider === "demo" ? "DEMO · Local validation" : `JEV · ${run.config?.provider || "—"}`} / ${run.id.slice(0, 8)}`));
     button.addEventListener("click", () => selectRun(run.id));
     fragment.append(button);
   }
@@ -215,7 +215,7 @@ function renderStages(run) {
     const active = !skipped && !complete && position === index;
     const failed = active && ["failed", "cancelled"].includes(run.status);
     const item = el("div", `run-stage${done ? " done" : ""}${active ? " active" : ""}${failed ? " failed" : ""}`);
-    item.append(el("span", "run-stage-symbol", skipped ? "–" : done ? "✓" : failed ? "!" : String(position + 1).padStart(2, "0")), el("span", "", skipped ? `${stage.label} · 跳过` : stage.label));
+    item.append(el("span", "run-stage-symbol", skipped ? "–" : done ? "✓" : failed ? "!" : String(position + 1).padStart(2, "0")), el("span", "", skipped ? `${stage.label} · Skipped` : stage.label));
     if (active) item.setAttribute("aria-current", "step");
     track.append(item);
   });
@@ -225,25 +225,25 @@ function renderProgress(run) {
   const dataset = state.datasets.find((item) => item.id === run.dataset_id);
   let processed = Number(progress.processed ?? run.data_report?.processed ?? 0);
   let total = Number(progress.total ?? run.data_report?.counts?.total ?? dataset?.rows ?? 0);
-  let label = stages.find((stage) => stage.key === run.stage)?.label || "工作流";
+  let label = stages.find((stage) => stage.key === run.stage)?.label || "Workflow";
   if (["training", "model_evaluation"].includes(run.stage) && progress.max_steps) {
-    processed = Number(progress.step || 0); total = Number(progress.max_steps); label = "训练步数";
+    processed = Number(progress.step || 0); total = Number(progress.max_steps); label = "Training steps";
   }
-  if (progress.stage === "loading_model") label = "正在加载基础模型";
-  if (progress.stage === "splitting") label = "正在构建独立数据集";
-  if (["evaluating", "evaluating_baseline"].includes(progress.stage)) label = progress.stage === "evaluating_baseline" ? "评估训练前的模型" : "评估训练后的模型";
-  if (run.status === "queued") label = "任务已创建，等待本地执行";
-  if (run.status === "completed") { label = "工作流已完成"; processed = total; }
-  if (run.status === "cancelled") label += " · 已取消";
-  if (run.status === "failed") label += " · 运行失败";
+  if (progress.stage === "loading_model") label = "Loading the base model";
+  if (progress.stage === "splitting") label = "Creating held-out data splits";
+  if (["evaluating", "evaluating_baseline"].includes(progress.stage)) label = progress.stage === "evaluating_baseline" ? "Evaluating the baseline model" : "Evaluating the trained model";
+  if (run.status === "queued") label = "Queued for local execution";
+  if (run.status === "completed") { label = "Workflow completed"; processed = total; }
+  if (run.status === "cancelled") label += " · Canceled";
+  if (run.status === "failed") label += " · Failed";
   $("progress-label").textContent = label;
-  $("progress-numbers").textContent = total ? `${number(processed)} / ${number(total)}` : isActive(run) ? "处理中…" : "—";
+  $("progress-numbers").textContent = total ? `${number(processed)} / ${number(total)}` : isActive(run) ? "Processing…" : "—";
   if (!total && isActive(run)) $("run-progress").removeAttribute("value");
   else $("run-progress").value = run.status === "completed" ? 100 : total > 0 ? Math.min(100, Math.max(0, processed / total * 100)) : 0;
   $("run-progress").setAttribute("aria-label", label);
 }
 function renderDistribution(run) {
-  const categories = [["keep", "保留"], ["review", "待审"], ["reject", "剔除"]];
+  const categories = [["keep", "Keep"], ["review", "Review"], ["reject", "Reject"]];
   const counts = run.counts || {};
   const measured = categories.every(([key]) => finiteNonnegative(counts[key]));
   const total = measured ? categories.reduce((sum, [key]) => sum + counts[key], 0) : 0;
@@ -258,7 +258,7 @@ function renderDistribution(run) {
     const percentage = counts[key] / total * 100;
     const segment = el("span", `distribution-segment ${key}`);
     segment.style.width = `${percentage}%`;
-    segment.title = `${label} ${number(counts[key])} 条 · ${percentage.toFixed(1)}%`;
+    segment.title = `${label}: ${number(counts[key])} records · ${percentage.toFixed(1)}%`;
     bar.append(segment);
     const item = el("li", "distribution-item");
     const dot = el("span", `distribution-dot ${key}`); dot.setAttribute("aria-hidden", "true");
@@ -266,7 +266,7 @@ function renderDistribution(run) {
     legend.append(item);
   }
   chart.append(bar, legend);
-  $("distribution-note").textContent = `基于已分类的 ${number(total)} 条记录${isActive(run) ? " · 随筛选进度更新" : ""}`;
+  $("distribution-note").textContent = `Based on ${number(total)} classified records${isActive(run) ? " · Updates as screening progresses" : ""}`;
 }
 function renderLossChart(report, demo) {
   const byStep = new Map();
@@ -294,9 +294,9 @@ function renderLossChart(report, demo) {
   const yMin = Math.max(0, minLoss - padding), yMax = maxLoss + padding;
   const x = (step) => left + (step - first.step) / (last.step - first.step) * plotWidth;
   const y = (loss) => top + (yMax - loss) / (yMax - yMin) * plotHeight;
-  const root = svg("svg", { class: "loss-svg", viewBox: `0 0 ${width} ${height}`, role: "img", "aria-labelledby": "loss-chart-title loss-chart-description" });
-  root.append(svg("title", { id: "loss-chart-title" }, `${demo ? "Demo 字节统计模型" : "大模型"}训练损失`));
-  root.append(svg("desc", { id: "loss-chart-description" }, `共 ${points.length} 个实测记录。第 ${first.step} 步 ${formatMetric(first.loss)}，第 ${last.step} 步 ${formatMetric(last.loss)}。最低 ${formatMetric(minLoss)}，最高 ${formatMetric(maxLoss)}。纵轴范围 ${formatMetric(yMin)} 至 ${formatMetric(yMax)}。`));
+  const root = svg("svg", { class: "loss-svg", viewBox: `0 0 ${width} ${height}`, role: "img", "aria-labelledby": "loss-svg-title loss-svg-description" });
+  root.append(svg("title", { id: "loss-svg-title" }, `${demo ? "Demo byte-bigram model" : "LLM"} training loss`));
+  root.append(svg("desc", { id: "loss-svg-description" }, `${points.length} recorded measurements. Step ${first.step}: ${formatMetric(first.loss)}; step ${last.step}: ${formatMetric(last.loss)}. Minimum ${formatMetric(minLoss)}, maximum ${formatMetric(maxLoss)}. Vertical axis: ${formatMetric(yMin)} to ${formatMetric(yMax)}.`));
   for (const value of [yMax, (yMax + yMin) / 2, yMin]) {
     root.append(svg("line", { class: "loss-grid", x1: left, x2: width - right, y1: y(value), y2: y(value) }));
     root.append(svg("text", { class: "loss-axis-label", x: left - 10, y: y(value) + 4, "text-anchor": "end" }, value.toFixed(2)));
@@ -312,7 +312,7 @@ function renderLossChart(report, demo) {
   root.append(svg("text", { class: "loss-axis-label", x: left, y: height - 9 }, `Step ${number(first.step)}`));
   root.append(svg("text", { class: "loss-axis-label", x: width - right, y: height - 9, "text-anchor": "end" }, `Step ${number(last.step)}`));
   chart.append(root);
-  $("loss-chart-note").textContent = `${number(points.length)} 个实测训练步 · NLL / ${demo ? "UTF-8 字节（含 EOS）" : "模型 token"} · 训练批次损失，与独立测试集指标分别观察`;
+  $("loss-chart-note").textContent = `${number(points.length)} recorded steps · NLL / ${demo ? "UTF-8 byte (including EOS)" : "model token"} · Training-batch loss, separate from held-out evaluation.`;
 }
 function renderModelReport(report) {
   $("model-report-section").hidden = !report;
@@ -322,7 +322,7 @@ function renderModelReport(report) {
   const metrics = $("model-metrics"); metrics.replaceChildren();
   const comparable = [report.baseline_loss, report.trained_loss].every(finiteNonnegative);
   const ceiling = comparable ? Math.max(report.baseline_loss, report.trained_loss) : 0;
-  for (const [kind, label, value, perplexity] of [["baseline", "训练前 · Test NLL ↓", report.baseline_loss, report.baseline_perplexity], ["trained", "训练后 · Test NLL ↓", report.trained_loss, report.trained_perplexity]]) {
+  for (const [kind, label, value, perplexity] of [["baseline", "Before · Test NLL ↓", report.baseline_loss, report.baseline_perplexity], ["trained", "After · Test NLL ↓", report.trained_loss, report.trained_perplexity]]) {
     const metric = el("div", "model-metric"); metric.append(el("span", "", label), el("strong", "", finiteNonnegative(value) ? formatMetric(value) : "—"));
     metric.append(el("small", "model-metric-unit", demo ? "nats / UTF-8 byte + EOS" : "nats / model token"));
     if (comparable) {
@@ -333,14 +333,14 @@ function renderModelReport(report) {
     if (finiteNonnegative(perplexity)) metric.append(el("small", "", `Perplexity ${formatMetric(perplexity)}`));
     if (kind === "trained" && typeof report.delta_loss === "number" && Number.isFinite(report.delta_loss)) {
       const delta = report.delta_loss;
-      metric.append(el("span", `metric-delta ${delta < 0 ? "improved" : delta > 0 ? "worsened" : "unchanged"}`, `${delta < 0 ? "↓" : delta > 0 ? "↑" : "="} ${Math.abs(delta).toFixed(4)} NLL ${delta < 0 ? "下降" : delta > 0 ? "上升" : "持平"}`));
+      metric.append(el("span", `metric-delta ${delta < 0 ? "improved" : delta > 0 ? "worsened" : "unchanged"}`, `${delta < 0 ? "↓" : delta > 0 ? "↑" : "="} ${Math.abs(delta).toFixed(4)} NLL ${delta < 0 ? "decrease" : delta > 0 ? "increase" : "unchanged"}`));
     }
     metrics.append(metric);
   }
   const notes = [];
-  if (typeof report.delta_loss === "number" && Number.isFinite(report.delta_loss)) notes.push(`Δ loss ${report.delta_loss > 0 ? "+" : ""}${report.delta_loss.toFixed(4)}（负数表示下降）`);
-  if (report.split_counts) notes.push(`训练 / 验证 / 测试：${["train", "validation", "test"].map((key) => number(report.split_counts[key] || 0)).join(" / ")}`);
-  notes.push(demo ? "Demo 为 UTF-8 字节二元统计模型，不是大模型；指标不能与 LLM token loss 直接比较。" : "在相同独立测试集上对比模型损失；该指标不代表任务准确率或生产效果。");
+  if (typeof report.delta_loss === "number" && Number.isFinite(report.delta_loss)) notes.push(`Δ loss ${report.delta_loss > 0 ? "+" : ""}${report.delta_loss.toFixed(4)} (negative means lower loss)`);
+  if (report.split_counts) notes.push(`Train / validation / test: ${["train", "validation", "test"].map((key) => number(report.split_counts[key] || 0)).join(" / ")}`);
+  notes.push(demo ? "Demo uses a UTF-8 byte-bigram model, not an LLM. Its metrics are not directly comparable to LLM token loss." : "Loss is compared on the same held-out test set. It does not measure task accuracy or production performance.");
   $("evaluation-note").textContent = notes.join(" · ");
   renderLossChart(report, demo);
 }
@@ -353,7 +353,7 @@ function renderLogs(run) {
   const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 35;
   const previousTop = container.scrollTop;
   const fragment = document.createDocumentFragment();
-  if (!logs.length) fragment.append(el("span", "", "等待任务输出…"));
+  if (!logs.length) fragment.append(el("span", "", "Waiting for output…"));
   for (const log of logs) {
     const row = el("div", "log-row"); row.append(el("span", "log-time", displayDate(log.time, true)), el("span", "log-text", log.message ?? "")); fragment.append(row);
   }
@@ -376,7 +376,7 @@ function renderArtifacts(run) {
       button.disabled = true;
       try {
         const url = new URL(artifact.url, location.origin);
-        if (url.origin !== location.origin || !url.pathname.startsWith("/api/runs/")) throw new Error("无效的产物下载地址。");
+        if (url.origin !== location.origin || !url.pathname.startsWith("/api/runs/")) throw new Error("Invalid artifact download URL.");
         if (!state.token) {
           // Let the browser stream large local downloads directly to disk.
           const link = el("a"); link.href = url.pathname + url.search; link.download = artifact.name.split("/").pop() || "artifact";
@@ -401,8 +401,8 @@ function renderRun() {
   $("run-name").textContent = run.name || `Run ${run.id.slice(0, 8)}`;
   $("run-status").textContent = statuses[run.status] || run.status;
   $("run-status").className = `status-badge status-${Object.hasOwn(statuses, run.status) ? run.status : "queued"}`;
-  const mode = run.config?.provider === "demo" ? "Demo 规则筛选" : `JEV ${run.config?.provider || ""}`;
-  $("run-meta").textContent = `${run.id.slice(0, 8)} · ${displayDate(run.created_at)} · ${mode} · 领域：${rubricNames[run.config?.rubric] || rubricNames.general}`;
+  const mode = run.config?.provider === "demo" ? "Demo rule screening" : `JEV ${run.config?.provider || ""}`;
+  $("run-meta").textContent = `${run.id.slice(0, 8)} · ${displayDate(run.created_at)} · ${mode} · Domain: ${rubricNames[run.config?.rubric] || rubricNames.general}`;
   $("cancel-button").hidden = !isActive(run); $("cancel-button").disabled = state.actionPending;
   $("retry-button").hidden = !["failed", "cancelled"].includes(run.status); $("retry-button").disabled = state.actionPending;
   $("run-error").hidden = !run.error; $("run-error").textContent = run.error || "";
@@ -459,7 +459,7 @@ async function pollRuns() {
     state.runs = runs;
     renderRunList(); renderRun(); setConnection(true);
     const current = state.runs.find((run) => run.id === state.runId);
-    if (isActive(priorSelected) && current && !isActive(current)) showToast(`工作流${statuses[current.status] || current.status}`, current.status === "failed");
+    if (isActive(priorSelected) && current && !isActive(current)) showToast(`Workflow ${String(statuses[current.status] || current.status).toLowerCase()}`, current.status === "failed");
   } catch (_) { failed = true; setConnection(false); }
   finally { state.polling = false; schedulePoll(failed ? 5000 : 1500); }
 }
@@ -469,16 +469,16 @@ function setUploading(uploading) {
   $("drop-zone").setAttribute("aria-busy", String(uploading));
   $("file-input").disabled = uploading; $("example-button").disabled = uploading;
   $("upload-progress").hidden = !uploading;
-  $("upload-title").textContent = uploading ? "正在上传并检查数据…" : "将数据文件拖拽到这里";
+  $("upload-title").textContent = uploading ? "Uploading and checking your data…" : "Drop your dataset here";
   updateStartState();
 }
 async function uploadDataset(file, example = false) {
   if (state.uploading) return;
   if (!example) {
     if (!file) return;
-    if (!/\.(jsonl|csv)$/i.test(file.name)) return showToast("请选择 UTF-8 编码的 .jsonl 或 .csv 文件。", true);
-    if (state.health?.max_upload_mb && file.size > state.health.max_upload_mb * 1024 * 1024) return showToast(`文件超过 ${number(state.health.max_upload_mb)} MB 的服务端限制。`, true);
-    if (!file.size) return showToast("文件为空，请选择包含记录的数据集。", true);
+    if (!/\.(jsonl|csv)$/i.test(file.name)) return showToast("Choose a UTF-8 encoded .jsonl or .csv file.", true);
+    if (state.health?.max_upload_mb && file.size > state.health.max_upload_mb * 1024 * 1024) return showToast(`The file exceeds the server limit of ${number(state.health.max_upload_mb)} MB.`, true);
+    if (!file.size) return showToast("The file is empty. Choose a dataset with at least one record.", true);
   }
   setUploading(true);
   try {
@@ -486,7 +486,7 @@ async function uploadDataset(file, example = false) {
     const dataset = await request(example ? "/api/datasets/example" : "/api/datasets", { method: "POST", body: example ? undefined : form });
     state.datasets.unshift(dataset); state.datasetId = dataset.id;
     renderDatasets(); $("global-error").hidden = true;
-    showToast(`${example ? "示例数据已添加" : "上传成功"} · ${number(dataset.rows)} 行记录`);
+    showToast(`${example ? "Example added" : "Upload complete"} · ${number(dataset.rows)} records`);
   } catch (error) { showError(error); }
   finally { setUploading(false); $("file-input").value = ""; }
 }
@@ -501,7 +501,7 @@ $("pipeline-form").addEventListener("submit", async (event) => {
       max_requests: Number($("max-requests").value), auto_train: $("auto-train").checked,
     } });
     upsertRun(run); state.runId = run.id; renderRunList(); renderRun(); schedulePoll();
-    $("global-error").hidden = true; showToast("工作流已创建，正在开始处理。");
+    $("global-error").hidden = true; showToast("Workflow created. Processing will begin shortly.");
     $("run-section").scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
   } catch (error) { showError(error); }
   finally { state.submitting = false; updateStartState(); }
@@ -514,7 +514,7 @@ async function runAction(action) {
     const run = await request(`/api/runs/${encodeURIComponent(runId)}/${action}`, { method: "POST" });
     upsertRun(run); if (state.runId === runId) state.runId = run.id;
     renderRunList(); renderRun(); schedulePoll();
-    showToast(action === "cancel" ? "已请求停止，任务会在当前步骤结束时退出。" : "工作流已重新启动。");
+    showToast(action === "cancel" ? "Stop requested. The run will exit after the current step." : "Workflow restarted.");
   } catch (error) { showError(error); }
   finally { state.actionPending = false; renderRun(); }
 }
@@ -531,7 +531,7 @@ let dragDepth = 0;
 $("drop-zone").addEventListener("dragenter", (event) => { event.preventDefault(); dragDepth++; if (!state.uploading) $("drop-zone").classList.add("drag-over"); });
 $("drop-zone").addEventListener("dragover", (event) => { event.preventDefault(); if (event.dataTransfer) event.dataTransfer.dropEffect = "copy"; });
 $("drop-zone").addEventListener("dragleave", (event) => { event.preventDefault(); dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $("drop-zone").classList.remove("drag-over"); });
-$("drop-zone").addEventListener("drop", (event) => { event.preventDefault(); dragDepth = 0; $("drop-zone").classList.remove("drag-over"); if (event.dataTransfer?.files.length > 1) showToast("每次上传一个数据集，已选择第一个文件。"); uploadDataset(event.dataTransfer?.files[0]); });
+$("drop-zone").addEventListener("drop", (event) => { event.preventDefault(); dragDepth = 0; $("drop-zone").classList.remove("drag-over"); if (event.dataTransfer?.files.length > 1) showToast("Upload one dataset at a time. The first file was selected."); uploadDataset(event.dataTransfer?.files[0]); });
 $("settings-button").addEventListener("click", () => { $("api-token").value = state.token; $("settings-dialog").showModal(); });
 $("close-settings").addEventListener("click", () => $("settings-dialog").close());
 $("settings-dialog").addEventListener("click", (event) => { if (event.target === $("settings-dialog")) { const bounds = event.target.getBoundingClientRect(); if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) event.target.close(); } });

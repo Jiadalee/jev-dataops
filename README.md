@@ -1,60 +1,58 @@
 # JEV DataOps
 
-**面向通用与垂域数据，把「上传数据 → 筛选 → 数据评估 → 模型训练 → 训练后评估」串成一条可操作、可追溯的链路。**
+**A traceable pipeline for general and domain-specific data: upload → screen → evaluate data → train a model → evaluate the result.**
 
-你可以先在普通电脑上跑通示例，再接入 JEV 筛选服务和自己的大模型。项目同时提供浏览器工作台、命令行和 Python / HTTP API，适合需要反复验证“这批数据是否值得训练、训练后有没有变化”的开发者和研究者。
+Start with a local example on an ordinary computer, then connect a JEV screening provider and your own language model. The project includes a browser workbench, a CLI, and Python / HTTP APIs for developers and researchers who need to answer two recurring questions: “Is this dataset worth training on?” and “What changed after training?”
 
-> **JEV 负责判断数据，目标模型负责学习数据。** 本项目调用 JEV API 做筛选；后续微调的是你配置的 Hugging Face 模型，不是 JEV 本身。
+> **JEV evaluates the data; your target model learns from it.** This project calls the JEV API for screening. Subsequent fine-tuning updates the Hugging Face model you configure, not JEV itself.
 
-**第一次使用：** [跑通示例](#quickstart) → [准备自己的数据](#data) → [开启真实筛选](#jev) → [开启大模型训练](#training) → [读懂结果](#results)
+**First time here?** [Run the demo](#quickstart) → [Prepare your data](#data) → [Enable JEV screening](#jev) → [Train a language model](#training) → [Read the results](#results)
 
-**其他入口：** [垂域如何接入](docs/DOMAIN_GUIDE.md) · [命令行与 API](#automation) · [大数据处理](#scale) · [常见问题](#faq) · [部署与开发](#development)
+**More:** [Domain adaptation guide](docs/DOMAIN_GUIDE.md) · [CLI and APIs](#automation) · [Larger datasets](#scale) · [Troubleshooting](#faq) · [Deployment and development](#development)
 
-English: A single-host workbench for streaming data selection, LoRA fine-tuning, and before/after evaluation on held-out data. Start with the offline demo, then configure a JEV provider and a target language model. See [training](docs/TRAINING.md) and [deployment](docs/DEPLOYMENT.md) for English technical documentation.
+## What does the pipeline do?
 
-## 这条链路具体做什么？
-
-| 步骤 | 系统做什么 | 你会得到什么 |
+| Step | What happens | What you get |
 | --- | --- | --- |
-| 1. 上传数据 | 读取 JSONL / CSV，记录文件信息并展示预览 | 可重复使用的数据集 |
-| 2. 筛选数据 | 本地检查格式、长度和精确重复；真实模式再调用 JEV 判断质量 | `keep` 保留、`review` 待复核、`reject` 剔除三份数据 |
-| 3. 评估数据 | 汇总分流数量、重复数、错误和 JEV 维度判断 | 数据报告与逐条审计记录 |
-| 4. 训练模型 | 只使用保留数据，先按组切分，再训练配置的模型 | 训练日志、数据切分、模型产物 |
-| 5. 评估模型 | 在相同的独立测试集上，对比训练前后的模型损失 | loss / perplexity 前后对比报告 |
+| 1. Upload | Read JSONL / CSV, record file details, and preview the data | A reusable dataset |
+| 2. Screen | Check format, length, and exact duplicates locally; live mode also asks JEV to assess quality | Three partitions: `keep`, `review`, and `reject` |
+| 3. Evaluate data | Summarize partition counts, duplicates, errors, and JEV's decisions by dimension | A data report and per-record audit trail |
+| 4. Train | Split retained records by group, then train the configured model | Training logs, dataset splits, and model artifacts |
+| 5. Evaluate the model | Compare loss before and after training on the same held-out test set | A before/after loss and perplexity report |
 
 ```mermaid
 flowchart TD
-    A[上传 JSONL / CSV] --> B[本地检查与精确去重]
-    B --> C[数据筛选：JEV 或本地 Demo]
-    C --> D[Keep：候选训练数据]
-    C --> E[Review：留待人工复核]
-    C --> F[Reject：剔除并保留记录]
-    C --> G[数据报告与逐条审计]
-    D --> H[按会话分组切分数据]
-    H --> I[训练集]
-    H --> J[验证集与测试集]
-    I --> K[LoRA 或 Demo 模型训练]
-    J --> L[训练前后使用同一评估集]
+    A[Upload JSONL / CSV] --> B[Local checks and exact deduplication]
+    B --> C[Screen with JEV or local Demo rules]
+    C --> D[Keep: candidate training data]
+    C --> E[Review: human review needed]
+    C --> F[Reject: exclude and record the reason]
+    C --> G[Data report and per-record audit]
+    D --> H[Split by content and conversation groups]
+    H --> I[Training set]
+    H --> J[Validation and test sets]
+    I --> K[LoRA or Demo model training]
+    J --> L[Evaluate before and after on the same held-out data]
     K --> L
-    L --> M[模型报告与可下载产物]
+    L --> M[Model report and downloadable artifacts]
 ```
 
-**数据评估回答“筛进了什么数据”；模型评估回答“模型学完后发生了什么变化”。** 当前模型评估使用 loss 和 perplexity，不包含业务准确率、人工评分或模型自动上线。
+**Data evaluation shows what passed screening; model evaluation shows what changed after learning from it.** Current model evaluation reports loss and perplexity. It does not measure business task accuracy, collect human ratings, or deploy models automatically.
 
-## 同一条链路，也能用于你的垂直领域
+## Use the same pipeline in your domain
 
-金融研报、代码问答、企业知识、法律文本、医学文献等场景，可以复用这套上传、分流、训练和评估流程。接入一个垂域的关键，是把**自己的数据、领域筛选标准、目标模型与独立业务评测集**接到链路中。例如，企业知识问答需要检查答案是否有制度依据；金融文本需要关注时间、来源与数字口径。这些标准应由领域团队定义，并通过小样本抽查校准。
+The upload, screening, training, and evaluation workflow can be reused for financial research, coding assistance, enterprise knowledge, legal texts, or medical literature. Adapting it means supplying **your data, domain screening criteria, target model, and an independent task benchmark**. For example, enterprise answers may need support from a policy document, while financial text may need consistent dates, sources, and numerical definitions. Domain experts should define these criteria and calibrate them through small-sample review.
 
-目前内置 `general`（通用）、`finance`（金融）、`code`（代码）三套**基础筛选规则**，覆盖质量、隐私和可训练性；金融与代码规则只加入了领域语境，并未内置事实查证、代码执行测试或专业业务评测。其他领域可从通用规则改起。你可以逐步沉淀规则版本、分流数据、模型适配器和评测结果；领域能力是否提升，仍需用自己的任务指标验证。
+The project includes three **starter screening rubrics**: `general`, `finance`, and `code`. All cover quality, privacy, and trainability. Finance and code add domain context; they do not include fact-checking, code execution tests, or specialized business evaluation. Other domains can start from the general rubric. Over time, retain your rubric versions, screened datasets, model adapters, and evaluation results as reusable assets. Verify improvements in domain capability using your own task metrics.
 
-→ 阅读 **[垂域接入指南](docs/DOMAIN_GUIDE.md)**：从选场景、准备数据、修改规则，到隔离评测集与接入业务指标。
+→ Read the **[Domain adaptation guide](docs/DOMAIN_GUIDE.md)** for task selection, data preparation, rubric customization, evaluation isolation, and business metrics.
 
 <a id="quickstart"></a>
-## 1. 先跑通本地示例
+## 1. Run the local demo
 
-需要 **Linux 或 macOS、Python 3.10+、Git**。以下默认模式不需要 API Key、GPU 或下载大模型；首次安装依赖需要联网。
+You need **Linux or macOS, Python 3.10+, and Git**. The default demo requires no API key, GPU, or language-model download. Installing dependencies for the first time requires internet access.
 
-### 安装并启动
+### Install and start
 
 ```bash
 git clone https://github.com/RenaGao/jev-dataops.git
@@ -67,137 +65,137 @@ pip install -e .
 jev-dataops serve
 ```
 
-保持终端运行，在浏览器打开 **[http://localhost:8000](http://localhost:8000)**。网页连接的是你启动的本机服务；GitHub 仓库首页不是在线训练网站。
+Keep the terminal running and open **[http://localhost:8000](http://localhost:8000)** in your browser. The workbench connects to the local service you started. The GitHub repository page is not a hosted training service.
 
-### 在页面上完成第一次运行
+### Complete your first run in the browser
 
-1. 在「准备你的数据」中点击 **使用示例**，载入仓库自带的合成数据。
-2. 保持「筛选引擎」为 **Demo · 本地规则验证**。
-3. 保持「训练后端」为 **Demo · 流程验证**，开启 **筛选后自动训练与评估**。
-4. 点击 **启动工作流**，在「运行与洞察」查看阶段、分流数量和日志。
-5. 完成后查看 **独立测试集评估**，在 **产物与报告** 下载结果。
+1. Under **Prepare your data**, click **Use example** to load the bundled synthetic dataset.
+2. Leave **Screening engine** set to **Demo · Local rules**.
+3. Leave **Training backend** set to **Demo · Pipeline validation** and enable **Auto-train and evaluate**.
+4. Click **Start workflow**, then follow the stages, partition counts, and logs under **Runs & insights**.
+5. When the run finishes, inspect **Held-out evaluation** and download results from **Artifacts & reports**.
 
-默认示例包含 84 行，预期得到 **80 条保留、2 条待复核、2 条剔除**；保留数据进一步分成 **56 条训练、12 条验证、12 条测试**。出现这些结果，说明上传、筛选、训练和评估链路已经跑通。
+The default example has 84 rows. Expect **80 kept, 2 for review, and 2 rejected**, with the retained data split into **56 training, 12 validation, and 12 test records**. These results confirm that upload, screening, training, and evaluation completed end to end.
 
-> Demo 筛选只做本地规则检查；Demo 训练会真实训练一个小型字节二元统计模型。它用于验证整个流程，**不代表 JEV 的判断能力，也不代表大模型训练效果**。
+> Demo screening uses local rules only. Demo training really trains a small byte-bigram statistical model. It validates the workflow; **it does not demonstrate JEV's judgment quality or language-model training performance**.
 
 <a id="data"></a>
-## 2. 换成你自己的数据
+## 2. Bring your own data
 
-将文件拖入上传区域，或点击选择文件。上传后先检查预览，再选择筛选与训练方式。
+Drag a file into the upload area or click to choose one. Check the preview before selecting your screening and training settings.
 
-### 推荐：JSONL，每行一个 JSON 对象
+### Recommended: JSONL, one JSON object per line
 
-指令微调数据可以写成：
+Instruction-tuning data can look like this:
 
 ```jsonl
-{"id":"sample-001","group_id":"conversation-001","instruction":"如何修改通知偏好？","input":"","output":"打开设置页面，选择通知，再按需调整提醒。"}
-{"id":"sample-002","group_id":"conversation-002","instruction":"忘记密码怎么办？","input":"","output":"在登录页面选择找回密码，并按提示完成身份验证。"}
+{"id":"sample-001","group_id":"conversation-001","instruction":"How do I change notification preferences?","input":"","output":"Open Settings, select Notifications, and adjust your preferences."}
+{"id":"sample-002","group_id":"conversation-002","instruction":"What if I forget my password?","input":"","output":"Select the password recovery option on the sign-in page and follow the identity verification steps."}
 ```
 
-上面两行仅用于说明格式。开启自动训练时，**筛选后至少需要 6 个独立分组**；准备更多样本，才能留出有意义的训练、验证和测试数据。
+These two rows illustrate the format only. Automatic training requires **at least 6 independent groups after screening**. Use more examples to create meaningful training, validation, and test sets.
 
-系统支持以下四种内容结构，**每条记录选择一种即可**：
+The system supports four content layouts. **Choose one per record:**
 
-| 数据类型 | 必需的内容字段 | 适用场景 |
+| Data type | Required content fields | Typical use |
 | --- | --- | --- |
-| 纯文本 | `text` | 文章、段落、领域文本 |
-| 指令与答案 | `instruction`、`output`；`input` 可选 | 指令微调数据 |
-| 问答对 | `prompt`、`response` | 单轮问答 |
-| 多轮对话 | `messages`，每项包含字符串 `role` 和 `content` | 对话训练数据 |
+| Plain text | `text` | Articles, passages, and domain text |
+| Instruction and answer | `instruction`, `output`; optional `input` | Instruction tuning |
+| Question and answer | `prompt`, `response` | Single-turn question answering |
+| Conversation | `messages`, with string `role` and `content` in each item | Conversation training |
 
-多轮对话示例：
+Conversation example:
 
 ```jsonl
-{"conversation_id":"chat-001","messages":[{"role":"user","content":"文件上传失败怎么办？"},{"role":"assistant","content":"请先检查文件格式和网络连接，然后重试。"}]}
+{"conversation_id":"chat-001","messages":[{"role":"user","content":"What should I do if a file upload fails?"},{"role":"assistant","content":"Check the file format and your network connection, then try again."}]}
 ```
 
-`role` 支持 `system`、`user`、`assistant`、`tool`，当前只接收文本内容。若一条记录混用多种结构，系统依次优先选择 `messages`、`text`、指令与答案、问答对；不要依赖混用字段来拼接训练内容。
+Supported roles are `system`, `user`, `assistant`, and `tool`; content must currently be text. If a record mixes layouts, the selection order is `messages`, `text`, instruction/answer, then prompt/response. Do not rely on mixed fields being combined into training content.
 
-### 也可以上传 CSV
+### CSV is also supported
 
-第一行是字段名，后续每行是一条记录。例如：
+Use field names in the first row and one record per subsequent row:
 
 ```csv
 instruction,output,group_id
-如何修改通知偏好？,在设置中打开通知页面并保存新偏好。,conversation-001
-忘记密码怎么办？,在登录页面选择找回密码并完成验证。,conversation-002
+How do I change notification preferences?,Open Notifications in Settings and save your new preferences.,conversation-001
+What if I forget my password?,Use password recovery on the sign-in page and complete verification.,conversation-002
 ```
 
-字段中有英文逗号、双引号或换行时，使用标准 CSV 转义。`messages` 列需要存放 JSON 数组字符串。直接上传 `.xlsx` 暂不支持，请先导出为 UTF-8 CSV。
+Use standard CSV quoting for fields containing commas, double quotes, or newlines. A `messages` column must contain a JSON-encoded array. Direct `.xlsx` uploads are not supported; export them as UTF-8 CSV first.
 
-### 为什么要填写分组 ID？
+### Why include a group ID?
 
-同一会话、文档或其他不能拆开的数据单元，应使用相同的 `group_id` 或 `conversation_id`。系统将关联记录放进同一个数据分区，减少“训练时看过测试内容”的问题。相同的归一化文本也会关联到同组；未提供分组 ID 时，主要依靠内容哈希分组。
+Give records from the same conversation, document, or other indivisible unit the same `group_id` or `conversation_id`. The system keeps related records in one split to reduce training/test leakage. Identical normalized text also links records into the same group. Without explicit group IDs, grouping mainly relies on content hashes.
 
-默认按独立分组分配约 **70% 训练 / 15% 验证 / 15% 测试**。各组行数不同时，最终行数比例会不同。精确重复检查不识别改写或语义相似样本。
+By default, independent groups are assigned approximately **70% to training, 15% to validation, and 15% to testing**. Row percentages vary when groups differ in size. Exact-duplicate checks do not identify paraphrases or semantic similarity.
 
-**输入限制：** 文件使用 UTF-8；网页上传默认上限 1 GiB；单条记录不超过 1 MiB；默认内容长度范围为 8–32,000 个字符。额外的 `id`、来源、分组等字段会保留在本地分流文件中。
+**Input limits:** UTF-8 files; a default browser upload limit of 1 GiB; at most 1 MiB per record; and a default content length of 8–32,000 characters. Extra fields such as `id`, source, and group identifiers remain in the local partition files.
 
 <a id="jev"></a>
-## 3. 开启真实 JEV 数据筛选
+## 3. Enable live JEV screening
 
-先在运行服务的终端中配置以下一种服务的 Key。若服务已经启动，先停止，再在设置好环境变量的终端重新启动。
+Configure a key for one of the following providers in the terminal that runs the service. If the service is already running, stop it and restart it after setting the environment variable.
 
-**通过 OpenRouter：**
+**Through OpenRouter:**
 
 ```bash
-export OPENROUTER_API_KEY='替换为你的 OpenRouter Key'
+export OPENROUTER_API_KEY='replace-with-your-openrouter-key'
 jev-dataops serve
 ```
 
-**或者直连 TypeSafe：**
+**Or connect directly to TypeSafe:**
 
 ```bash
-export TYPESAFE_API_KEY='替换为你的 TypeSafe Key'
+export TYPESAFE_API_KEY='replace-with-your-typesafe-key'
 jev-dataops serve
 ```
 
-两家平台的 Key 不能互换。在网页中刷新后，将「筛选引擎」切换为 **JEV · OpenRouter** 或 **JEV · TypeSafe**。
+The providers' keys are not interchangeable. Refresh the page and select **JEV · OpenRouter** or **JEV · TypeSafe** under **Screening engine**.
 
-第一次使用真实 API，可以先上传一份小样本，**关闭「筛选后自动训练与评估」**，只看筛选结果。这样能先核对判断和复核量，再决定是否训练。
+For your first live API run, start with a small dataset and **disable Auto-train and evaluate**. Inspect the screening decisions and review volume before deciding to train.
 
-### 筛选结果如何决定？
+### How are screening decisions made?
 
-默认通用规则评估内容质量、明显的隐私暴露和训练适用性。格式错误、长度异常和精确重复会先在本地处理；JEV 判断按以下规则分流：
+The default general rubric assesses content quality, apparent privacy exposure, and suitability for training. Format errors, length violations, and exact duplicates are handled locally first. JEV results are routed as follows:
 
-| 结果 | 含义 | 后续处理 |
+| Decision | Meaning | What happens next |
 | --- | --- | --- |
-| **Keep** | 各维度均达到当前规则的保留条件与置信度门槛 | 完整筛选结束后，可进入训练候选集 |
-| **Review** | 判断不确定、置信度不足，或记录 / 响应需要核查 | 写入复核文件，不自动进入训练 |
-| **Reject** | 至少一个维度明确不通过，或命中本地剔除规则 | 写入剔除文件，保留原因 |
+| **Keep** | Every dimension meets its retention criteria and confidence threshold | Eligible for the training candidate set once screening completes |
+| **Review** | A judgment is uncertain, confidence is low, or a record / response needs checking | Written to the review file; excluded from automatic training |
+| **Reject** | At least one dimension rejects the record, or a local rejection rule applies | Written to the rejection file with a recorded reason |
 
-分流优先级为 **Reject → Review → Keep**：若一个维度需要复核，但另一个维度已明确不通过，最终仍会剔除。
+Decision precedence is **Reject → Review → Keep**. If one dimension requests review but another rejects, the record is rejected.
 
-原始上传文件不会被删除。当前 `review.jsonl` 供下载后人工检查，网页尚未提供逐条标注与自动回流功能。修正后可作为新数据集上传。
+The original upload is retained. Download `review.jsonl` for manual inspection; the workbench does not yet offer per-record annotation or automatic feedback into training. Corrected records can be uploaded as a new dataset.
 
-| 页面参数 | 默认值 | 如何理解 |
+| Setting | Default | Meaning |
 | --- | --- | --- |
-| 质量置信度阈值 | `0.85` | 判断的最低置信度门槛，不表示“85% 的样本一定正确”；Demo 不使用此门槛 |
-| 并发请求数 | `4` | 同时处理的筛选任务数；真实吞吐受服务配额影响 |
-| 请求上限 | `1000` | 本次运行最多发送的 HTTP 请求次数，包含重试；不是样本数，也不是金额上限 |
+| Confidence threshold | `0.85` | Minimum confidence for a judgment; it does not mean “85% of samples are correct.” Demo does not use this threshold |
+| Concurrent requests | `4` | Concurrent screening tasks; live throughput depends on provider quotas |
+| Request limit | `1000` | Maximum HTTP requests for this run, including retries; not a sample count or spending cap |
 
-如果请求预算耗尽、认证失败或网络故障导致筛选不完整，系统会阻止后续自动训练。在网页「应用领域」中可选择通用 `general`、金融 `finance` 或代码 `code`，也可通过 [CLI 或 API](#automation) 的 `rubric` 选择。领域选择用于真实 JEV 的基础筛选规则，Demo 不执行领域语义判断；定制更多领域见 [垂域接入指南](docs/DOMAIN_GUIDE.md)。
+Incomplete screening due to an exhausted request budget, authentication failure, or network error blocks automatic training. Under **Application domain**, choose General (`general`), Finance (`finance`), or Code (`code`). You can also select the rubric through the [CLI or API](#automation). Domain selection configures the starter rubric for live JEV screening; Demo does not perform semantic domain assessment. See the [Domain adaptation guide](docs/DOMAIN_GUIDE.md) to customize additional domains.
 
-> **真实筛选会把选中的内容字段发送到所选第三方服务。** 请先自行脱敏并确认有权传输。模型的隐私检查发生在提交之后，不能代替上传前脱敏。网页「连接设置」里的访问令牌是 `JEV_API_TOKEN`，用于访问工作台，不是 OpenRouter / TypeSafe Key。Python CLI 不会自动读取 `.env` 文件。
+> **Live screening sends the selected content fields to the chosen third-party provider.** Remove sensitive information beforehand and confirm that you have permission to transmit the data. The model's privacy check happens after submission and cannot replace pre-upload redaction. The token in **Connection settings** is `JEV_API_TOKEN`, which controls access to the workbench; it is not an OpenRouter or TypeSafe key. The Python CLI does not automatically load `.env` files.
 
-接口依据：[TypeSafe API](https://docs.typesafe.ai/api)、[OpenRouter decisions SDK](https://github.com/OpenRouterTeam/typescript-sdk/blob/main/src/funcs/alphaDecisionsCreate.ts)。OpenRouter decisions 接口目前为 alpha，接口或模型可用性可能变化。
+API references: [TypeSafe API](https://docs.typesafe.ai/api), [OpenRouter decisions SDK](https://github.com/OpenRouterTeam/typescript-sdk/blob/main/src/funcs/alphaDecisionsCreate.ts). OpenRouter's decisions endpoint is currently alpha; the API and model availability may change.
 
 <a id="training"></a>
-## 4. 开启真实大模型训练
+## 4. Train a language model
 
-筛选引擎和训练后端是两个独立选项。**切换到真实 JEV，并不会自动把训练后端改成大模型。**
+Screening engine and training backend are independent settings. **Selecting live JEV screening does not automatically switch training to a language model.**
 
-| 你想做什么 | 筛选引擎 | 训练后端 / 开关 |
+| Goal | Screening engine | Training backend / toggle |
 | --- | --- | --- |
-| 不花 API 费用，先验证完整流程 | Demo | Demo，开启自动训练 |
-| 只筛选和检查数据 | JEV · OpenRouter 或 TypeSafe | 关闭自动训练 |
-| JEV 筛选后微调大模型 | JEV · OpenRouter 或 TypeSafe | Hugging Face · LoRA，开启自动训练 |
-| 本地规则筛选后微调大模型 | Demo | Hugging Face · LoRA，开启自动训练 |
+| Validate the complete workflow without API charges | Demo | Demo; enable automatic training |
+| Screen and inspect data only | JEV · OpenRouter or TypeSafe | Disable automatic training |
+| Fine-tune a language model after JEV screening | JEV · OpenRouter or TypeSafe | Hugging Face · LoRA; enable automatic training |
+| Fine-tune a language model after local screening | Demo | Hugging Face · LoRA; enable automatic training |
 
-### 安装依赖并指定目标模型
+### Install dependencies and choose the target model
 
-在相同项目目录、相同虚拟环境中执行：
+In the same project directory and virtual environment, run:
 
 ```bash
 pip install -e '.[train]'
@@ -205,114 +203,115 @@ export JEV_BASE_MODEL='HuggingFaceTB/SmolLM2-135M'
 jev-dataops serve
 ```
 
-若使用真实 JEV，请同时保留上一节设置的服务 Key。服务已运行时需要重启，才能读取新的环境配置。
+For live JEV screening, keep the provider key from the previous section configured as well. Restart a running service to load changed environment settings.
 
-刷新网页，选择 **Hugging Face · LoRA**，开启 **筛选后自动训练与评估**，然后启动工作流。训练和评估在**运行后端服务的机器**上执行，不在浏览器里执行。
+Refresh the page, select **Hugging Face · LoRA**, enable **Auto-train and evaluate**, and start the workflow. Training and evaluation run **on the machine hosting the backend**, not in the browser.
 
-默认小模型用于验证运行路径。你可以通过 `JEV_BASE_MODEL` 指定兼容的 Hugging Face 模型或本地模型目录。首次运行可能下载模型；算力和内存需求取决于模型。设备默认优先使用 CUDA，否则使用 CPU；可通过 `JEV_TRAIN_DEVICE` 指定设备。模型须支持标准 causal LM 加载、具备 EOS token，使用 safetensors 权重，且不依赖远程自定义 Python 代码。
+The default small model is intended to validate the execution path. Set `JEV_BASE_MODEL` to a compatible Hugging Face model or local model directory. The first run may download model files; compute and memory requirements depend on the model. The default device selection prefers CUDA and otherwise uses CPU. Override it with `JEV_TRAIN_DEVICE`. Models must support standard causal LM loading, have an EOS token, use safetensors weights, and work without remote custom Python code.
 
-### 训练时实际发生什么？
+### What happens during training?
 
-1. 完整筛选结束后，读取 `keep.jsonl`，其余两类数据不参与训练。
-2. 按分组切分训练、验证、测试集；独立分组不足时停止。
-3. 测量基础模型在验证集和测试集上的 loss。
-4. 在训练集上进行 LoRA 微调。
-5. 使用相同的验证集和测试集再次评估，并保存适配器和报告。
+1. After screening completes, read `keep.jsonl`. Review and rejected records do not participate in training.
+2. Create training, validation, and test splits by group; stop if there are too few independent groups.
+3. Measure the base model's loss on the validation and test sets.
+4. Fine-tune LoRA adapters on the training set.
+5. Evaluate again on the same validation and test sets, then save the adapters and reports.
 
-**默认参数是小规模验证配置：1 个 epoch、最多 20 个训练 step、batch size 4、序列长度 256。** 序列长度在大模型模式下按 token 计，Demo 按 UTF-8 字节计。到达 epoch 或 step 上限就会停止，长样本会截断；不能据此认定整份大数据集已训练完成。实际训练步数、样本访问数和 loss 会写进 `training_report.json`。
+**The defaults are a small validation run: 1 epoch, at most 20 training steps, batch size 4, and sequence length 256.** Sequence length counts tokenizer tokens for language models and UTF-8 bytes for Demo. Training stops at the epoch or step limit, and long records are truncated. A completed run therefore does not mean an entire large dataset was used for training. Actual steps, record visits, and losses are saved in `training_report.json`.
 
-正式实验应通过 [HTTP API 或 Python API](#automation) 调整参数。当前网页和 CLI 没有训练步数输入项。训练方式为全文 causal SFT：prompt 和 response 都参与 loss；尚未实现仅答案位置计算 loss、DPO / RLHF、分布式训练或自动模型发布。
+Use the [HTTP or Python API](#automation) to adjust parameters for a full experiment. The browser and CLI currently have no training-step input. Training uses full-text causal SFT: both prompt and response contribute to loss. Answer-only loss, DPO / RLHF, distributed training, and automatic model publishing are not implemented.
 
-产出的 `model/` 是 **LoRA 适配器及 tokenizer 文件**，使用时仍需原始基础模型。更多配置与限制见 [训练说明](docs/TRAINING.md)。
+The resulting `model/` contains **LoRA adapters and tokenizer files**. Inference still requires the original base model. See the [training guide](docs/TRAINING.md) for additional configuration and limitations.
 
 <a id="results"></a>
-## 5. 运行完成后，先看什么？
+## 5. Read the results
 
-### 先检查数据，再解释模型指标
+### Inspect the data before interpreting model metrics
 
-1. **看分流数量：** 保留多少、复核多少、剔除多少。保留率高只说明更多数据通过当前规则，不等于准确率高。
-2. **抽查具体记录：** 下载三份分流数据，结合 `audit.jsonl` 查看记录的分流原因；真实 JEV 模式还会记录判断维度和模型标识。
-3. **看训练是否符合预期：** 核对训练 / 验证 / 测试数量、实际步数、使用的模型和截断长度。
-4. **对比测试集指标：** 确认比较的是同一组数据、同一种指标，再判断是否继续扩大实验。
+1. **Check partition counts.** How much was kept, sent for review, or rejected? A high retention rate means more data passed the current rules, not that accuracy is high.
+2. **Inspect individual records.** Download the three partitions and use `audit.jsonl` to review decision reasons. Live JEV mode also records decision dimensions and model identifiers.
+3. **Check what training actually did.** Verify split sizes, actual steps, the model used, and the truncation length.
+4. **Compare test-set metrics.** Confirm that the data and measurement units match before deciding whether to expand the experiment.
 
-| 指标 | 含义 | 怎么读 |
+| Metric | Meaning | How to read it |
 | --- | --- | --- |
-| `baseline_loss` | 训练前模型在测试集上按预测 token 数加权的平均负对数似然 | 基线 |
-| `trained_loss` | 训练后模型在同一测试集上按预测 token 数加权的平均负对数似然 | 与基线比较，通常越低越好 |
-| `delta_loss` | `trained_loss - baseline_loss` | 负数表示 loss 下降；正数表示上升 |
-| `baseline_perplexity` / `trained_perplexity` | 对应模型的困惑度 | 同一评估口径下比较，通常越低越好 |
-| `split_counts` | 训练、验证、测试集行数 | 检查数据是否成功保留和切分 |
+| `baseline_loss` | Test-set mean negative log likelihood before training, weighted by predicted token count | The baseline |
+| `trained_loss` | The same measurement after training on the same test set | Compare with the baseline; usually lower is better |
+| `delta_loss` | `trained_loss - baseline_loss` | Negative means lower loss; positive means higher loss |
+| `baseline_perplexity` / `trained_perplexity` | Perplexity for the corresponding model | Compare within the same evaluation setup; usually lower is better |
+| `split_counts` | Training, validation, and test row counts | Check retained data volume and the resulting split |
 
-例如，loss 从 `2.50` 变成 `2.30`，则 `delta_loss = -0.20`。这是指标解释示例，不是项目承诺的训练收益。
+For example, a change from loss `2.50` to `2.30` gives `delta_loss = -0.20`. This illustrates the metric; it is not a promised training gain.
 
-Demo 的指标按 UTF-8 字节计算，大模型模式按 tokenizer token 计算，**两者不能直接比较**。测试集 loss 下降也不等于业务准确率、事实性或用户体验提升；这些需要额外的任务评测和人工验证。反复根据测试集结果调参会削弱它的独立性，正式决策应另留外部评测集。
+Demo metrics use UTF-8 bytes; language-model metrics use tokenizer tokens. **Do not compare them directly.** Lower test loss does not establish better business accuracy, factuality, or user experience. Those require task-specific evaluation and human validation. Repeatedly tuning against test results weakens test-set independence; reserve an external benchmark for final decisions.
 
-### 文件放在哪里？
+### Where are the files?
 
-网页默认将数据保存在启动命令所在目录的 `.jev-dataops/`（按快速启动操作时即项目目录），可用 `jev-dataops serve --data-dir /your/data/path` 更换位置。每个任务都有自己的目录：
+By default, the workbench stores data in `.jev-dataops/` under the directory where you started the service—the project directory if you followed the quickstart. Change it with `jev-dataops serve --data-dir /your/data/path`. Each run has its own directory:
 
 ```text
 .jev-dataops/
-├── datasets/                     # 原始上传文件
-├── metadata.sqlite3              # 数据集与运行记录
+├── datasets/                     # Original uploads
+├── metadata.sqlite3              # Dataset and run records
 └── runs/<run_id>/
     ├── screening/
-    │   ├── keep.jsonl            # 候选训练数据
-    │   ├── review.jsonl          # 待人工复核
-    │   ├── reject.jsonl          # 已剔除数据
-    │   ├── audit.jsonl           # 逐条判断与原因
-    │   ├── data_report.json      # 数据统计与完成状态
-    │   └── cache.sqlite3         # 筛选结果缓存
-    └── training-1/               # 第一次训练尝试
+    │   ├── keep.jsonl            # Candidate training data
+    │   ├── review.jsonl          # Records for human review
+    │   ├── reject.jsonl          # Rejected records
+    │   ├── audit.jsonl           # Per-record decisions and reasons
+    │   ├── data_report.json      # Data statistics and completion status
+    │   └── cache.sqlite3         # Screening result cache
+    └── training-1/               # First training attempt
         ├── train.jsonl
         ├── validation.jsonl
         ├── test.jsonl
-        ├── training_report.json # 参数、步数、loss 记录
-        ├── model_report.json    # 训练前后评估
-        └── model/               # 模型产物
+        ├── training_report.json # Parameters, steps, and loss history
+        ├── model_report.json    # Before/after evaluation
+        └── model/               # Model artifacts
 ```
 
-网页「产物与报告」可以下载分流数据、报告和模型文件。未训练的任务不会有训练产物；失败任务可能只有部分文件，应以运行状态和报告的完成标记为准。默认运行目录已加入 Git 忽略规则。
+Download partition files, reports, and model files under **Artifacts & reports**. Runs without training have no training artifacts. Failed runs may have only partial outputs; check the run status and report completion flags. The default run directory is included in Git's ignore rules.
 
 <a id="automation"></a>
-## 6. 用 CLI 或 API 接入已有流程
+## 6. Connect the CLI or APIs to your workflow
 
-### 命令行：不打开网页也能跑
+### Run from the command line
 
 ```bash
-# 本地 Demo 全链路；首次运行使用一个新的输出目录
+# Complete local Demo pipeline; use a new output directory for the first run
 jev-dataops run --input examples/dialogues.jsonl --output /tmp/jev-demo-001
 
-# 仅做真实 JEV 筛选；先设置 TYPESAFE_API_KEY
+# Live JEV screening only; set TYPESAFE_API_KEY first
 jev-dataops run --input /data/corpus.csv --output /data/selection-001 \
   --provider typesafe --trainer none --rubric general \
   --concurrency 4 --max-requests 1000
 
-# 真实筛选 + LoRA 训练；先设置 OPENROUTER_API_KEY 和 JEV_BASE_MODEL，并安装训练依赖
+# Live screening + LoRA training; set OPENROUTER_API_KEY and JEV_BASE_MODEL
+# and install training dependencies first
 jev-dataops run --input /data/corpus.jsonl --output /data/llm-run-001 \
   --provider openrouter --trainer huggingface --rubric general \
   --confidence 0.85 --concurrency 4 --max-requests 1000
 ```
 
-将路径替换为自己的文件与输出目录。真实请求上限应根据样本量和预算设置，1000 次不保证足以完成 1000 条样本的筛选，因为重试也计数。CLI 输出位于指定目录的 `screening/` 和 `training/`，与网页的 `training-1/` 命名不同。
+Replace the paths with your own input files and output directories. Set the live request limit according to dataset size and budget. A limit of 1,000 does not guarantee that 1,000 records can be screened because retries also count. CLI outputs use `screening/` and `training/` under the specified directory; the browser uses `training-1/` for its first attempt.
 
-`jev-dataops run --help` 可查看支持的参数。CLI 的训练使用上述默认小规模配置；它当前不接收 `--max-steps` 或 `--epochs` 参数。
+Run `jev-dataops run --help` to see supported options. CLI training uses the small defaults described above and does not currently accept `--max-steps` or `--epochs`.
 
-### HTTP API：配置更完整的训练实验
+### Configure a training experiment through HTTP
 
-启动服务后，先上传文件，记录返回的 `id`：
+Start the service, upload a file, and save the returned `id`:
 
 ```bash
 curl -F 'file=@my-data.jsonl' http://localhost:8000/api/datasets
 ```
 
-将下面的 `dataset_id` 替换为该 ID，再创建任务。此示例会使用真实 JEV API 并启动实际 LoRA 训练，需先完成前面的环境配置：
+Replace `dataset_id` below with that ID, then create a run. This example makes live JEV requests and performs actual LoRA training, so complete the environment setup first:
 
 ```bash
 curl http://localhost:8000/api/runs \
   -H 'Content-Type: application/json' \
   -d '{
-    "dataset_id": "替换为上传返回的id",
+    "dataset_id": "replace-with-the-uploaded-dataset-id",
     "provider": "openrouter",
     "trainer": "huggingface",
     "auto_train": true,
@@ -328,50 +327,50 @@ curl http://localhost:8000/api/runs \
   }'
 ```
 
-这些参数只是格式示例，训练规模需按数据与算力调整。创建后用 `GET /api/runs/<run_id>` 查看状态，或回到网页查看。同一服务开启 `JEV_API_TOKEN` 时，每个 API 请求还需添加 `-H "Authorization: Bearer $JEV_API_TOKEN"`。
+These parameters illustrate the request format; adjust the training scale to your data and compute. Check progress with `GET /api/runs/<run_id>` or return to the browser. If the service uses `JEV_API_TOKEN`, add `-H "Authorization: Bearer $JEV_API_TOKEN"` to every API request.
 
-完整接口在运行中的 [Swagger 文档](http://localhost:8000/docs)；若要单独调用训练模块、调整 batch size 或切分比例，见 [Python API 示例](docs/TRAINING.md#python-api)。
+See the running service's [Swagger documentation](http://localhost:8000/docs) for all endpoints. To call training directly or adjust batch size and split fractions, see the [Python API example](docs/TRAINING.md#python-api).
 
 <a id="scale"></a>
-## 7. 数据量增大后怎么使用？
+## 7. Work with larger datasets
 
-项目使用流式读取、有限并发，以及 SQLite 磁盘去重和缓存，避免把整个数据集放进 Python 内存。**当前是单机工作台**：一次执行一个完整任务，任务内部并发筛选；尚未提供分布式队列、对象存储或断点分片上传。模型本身仍需装入内存 / 显存。
+Streaming reads, bounded concurrency, and disk-backed SQLite deduplication and caching avoid loading the whole dataset into Python memory. **This is currently a single-host workbench:** it executes one complete run at a time, with concurrent screening inside each run. Distributed queues, object storage, and resumable chunked uploads are not implemented. The model itself must still fit in memory / VRAM.
 
-已有一次可复现的本地测试：**10 万条合成记录，筛选约 93 秒，峰值进程内存约 50 MiB**。它测试的是本地规则与磁盘管道，不是 JEV API 吞吐或大模型训练速度。测试环境、训练步数和复现命令见 [基准说明](docs/BENCHMARKS.md)。
+One reproducible local benchmark screened **100,000 synthetic records in approximately 93 seconds, with peak process memory of approximately 50 MiB**. This measures local rules and the disk pipeline, not JEV API throughput or language-model training speed. See the [benchmark notes](docs/BENCHMARKS.md) for the environment, training steps, and reproduction commands.
 
-扩大数据量时，先用小样本核对 schema、筛选规则和分组，再增加请求预算与并发，最后扩大训练步数。根据 `review` 和 `reject` 的抽查结果调整数据，不要只追求保留率。磁盘需容纳原文件、分流文件、审计缓存、训练切分和模型产物。
+Before scaling up, use a small sample to check the schema, screening rubric, and grouping. Then increase request budget and concurrency, followed by training steps. Improve the data based on reviewed examples from the `review` and `reject` partitions rather than retention rate alone. Reserve disk space for original uploads, partitions, audit logs, caches, training splits, and model artifacts.
 
 <a id="faq"></a>
-## 8. 常见问题
+## 8. Troubleshooting
 
-| 现象 | 原因与处理 |
+| Symptom or question | Explanation and next step |
 | --- | --- |
-| JEV 选项显示「未配置」 | 在后端进程中设置对应服务 Key，重启服务并刷新网页；不要把 Key 填进网页访问令牌输入框 |
-| Hugging Face 显示「未安装」 | 在启动服务的同一 Python 环境中安装 `.[train]`，然后重启 |
-| 上传 `.json` / `.xlsx` 失败 | 网页接受 `.jsonl` / `.csv`；JSONL 是一行一个对象，不是整个 JSON 数组 |
-| 提示独立分组不足 | 保留数据至少要有 6 个独立组件；相同会话或重复内容可能把多行合并为一组，不应为绕过限制随意改 ID |
-| 任务失败或请求预算耗尽 | 查看错误与数据报告。失败 / 取消的网页任务可点「重新运行」复用筛选缓存；它使用原配置，且每次重新获得配置的请求预算 |
-| 想换阈值、预算或训练方式 | 修改配置后创建新任务；网页的「重新运行」不会修改原任务配置，缓存也不是所有新任务全局共享的 |
-| 重新运行是不是接着上次训练？ | 筛选可复用成功缓存；训练会写入新的 `training-2/` 等目录，从头训练，不恢复优化器状态 |
-| CLI 再跑一次提示训练产物已存在 | CLI 可复用筛选目录，但训练不会覆盖现有产物。需要保留旧结果并给新训练使用空目录；更方便的重试入口是网页 |
-| 训练很快结束，或只训练了几十条数据 | 检查 `max_steps`、epoch 与实际样本访问数；默认最多 20 步是为了验证链路 |
-| 大模型下载失败、显存不足 | 核查模型访问权限和设备资源；选择能装入设备的兼容模型，或用 `JEV_BASE_MODEL` 指向已准备好的本地模型目录 |
-| loss 没有下降 | 这可能是实际结果。检查数据、切分和训练参数，再做任务评估；系统不保证每次微调都有收益 |
-| 服务重启后任务显示失败 | 未完成任务会被标记为中断；可重新运行并复用筛选缓存，不会冒充完成 |
+| JEV is marked “Not configured” | Set the provider's key in the backend process, restart the service, and refresh. Do not enter it in the workbench access-token field |
+| Hugging Face is marked “Not installed” | Install `.[train]` in the same Python environment used to start the service, then restart |
+| A `.json` / `.xlsx` upload fails | The browser accepts `.jsonl` / `.csv`. JSONL has one object per line, not a single JSON array |
+| Too few independent groups | Retained data must contain at least 6 independent components. Shared conversations or duplicate content can join multiple rows into one group; do not change IDs merely to bypass this check |
+| A run fails or exhausts its request budget | Inspect the error and data report. Failed / cancelled browser runs can be retried using their screening cache. A retry uses the original configuration and receives a fresh request budget of the configured size |
+| I want a different threshold, budget, or training backend | Change the configuration and create a new run. Retrying does not change the original configuration, and the cache is not shared globally across all new runs |
+| Does retry resume the previous training attempt? | Screening can reuse successful cached decisions. Training starts over in a new directory such as `training-2/`; it does not restore optimizer state |
+| A repeated CLI run says training artifacts already exist | CLI screening can reuse its directory, but training does not overwrite existing artifacts. Keep previous results and use an empty directory for new training. The browser provides a simpler retry flow |
+| Training finishes quickly or visits only a few dozen records | Check `max_steps`, epochs, and actual record visits. The default 20-step limit is for workflow validation |
+| Model download fails or the device runs out of memory | Check model access and device resources. Choose a compatible model that fits, or point `JEV_BASE_MODEL` to a prepared local model directory |
+| Loss did not decrease | This can be the real result. Inspect the data, split, and training configuration, then run task evaluation. Fine-tuning gains are not guaranteed |
+| A run is marked failed after a service restart | Unfinished runs are marked interrupted. Retry to reuse the screening cache; interrupted work is never reported as completed |
 
 <a id="development"></a>
-## 9. 部署、开发与项目边界
+## 9. Deployment, development, and scope
 
-### Docker 启动
+### Start with Docker
 
 ```bash
-export JEV_API_TOKEN='替换为你生成的长随机访问令牌'
+export JEV_API_TOKEN='replace-with-a-long-random-access-token'
 docker compose up --build
 ```
 
-打开 [http://localhost:8000](http://localhost:8000)，在「连接设置」输入同一令牌。默认 Docker 镜像包含网页与 Demo 运行环境；真实 LLM 训练需另配置训练依赖和合适的设备环境。团队远程使用时，还需要 HTTPS、访问控制和独立的数据存储规划，见 [部署说明](docs/DEPLOYMENT.md)。
+Open [http://localhost:8000](http://localhost:8000) and enter the same token in **Connection settings**. The default Docker image includes the web workbench and Demo runtime. Real language-model training requires training dependencies and a suitable device environment. Remote team use also needs HTTPS, access controls, and a data storage plan. See the [deployment guide](docs/DEPLOYMENT.md).
 
-### 本地开发验证
+### Validate local development
 
 ```bash
 pip install -e '.[dev]'
@@ -379,13 +378,13 @@ pytest -q
 python -m build
 ```
 
-安装 `.[train]` 后，测试还会执行使用本地微型 Transformer 的真实 LoRA 训练检查。该测试不下载模型，不证明某个预训练模型的业务效果。
+With `.[train]` installed, the tests also perform a real LoRA training check using a tiny local Transformer. This test does not download a model or demonstrate the business performance of any pretrained model.
 
-| 已提供 | 尚未提供 |
+| Included | Not yet implemented |
 | --- | --- |
-| JSONL / CSV 上传与流式筛选 | Excel 原生解析、音频质量评估 |
-| JEV 三分流、逐条审计、缓存重试 | 人工标注台、语义去重、人工金标准确率校准 |
-| 分组切分、LoRA SFT、训练前后 loss 评估 | DPO / RLHF、多机训练、业务基准评测、自动上线 |
-| 本地工作台与共享访问令牌 | 多租户隔离、完整 SaaS 用户系统 |
+| JSONL / CSV uploads and streaming screening | Native Excel parsing, audio quality evaluation |
+| JEV keep/review/reject routing, per-record audits, cached retries | Annotation workbench, semantic deduplication, accuracy calibration against human gold labels |
+| Group-aware splits, LoRA SFT, before/after loss evaluation | DPO / RLHF, multi-machine training, business benchmarks, automatic deployment |
+| Local workbench and shared access token | Tenant isolation, a complete SaaS user system |
 
-**许可证与贡献：** 项目源码采用 [MIT](LICENSE)，模型权重与第三方 API 分别遵循各自条款。本项目是独立社区项目，与 TypeSafe / OpenRouter 无隶属或官方背书关系。欢迎通过 [贡献指南](CONTRIBUTING.md) 提交改进；安全问题见 [SECURITY.md](SECURITY.md)。
+**License and contributions:** Source code is licensed under [MIT](LICENSE). Model weights and third-party APIs have their own terms. This is an independent community project, with no affiliation with or endorsement by TypeSafe or OpenRouter. See [CONTRIBUTING.md](CONTRIBUTING.md) to contribute and [SECURITY.md](SECURITY.md) for security reporting.
