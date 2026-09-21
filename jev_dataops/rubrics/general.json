@@ -1,6 +1,7 @@
 {
   "name": "general",
-  "version": "1",
+  "version": "2",
+  "dedupe": "whitespace",
   "description": "Conservative general-purpose training-data screening. This is a screening rubric, not a factual verification service.",
   "questions": {
     "quality": {
@@ -41,7 +42,10 @@
       ],
       "reject": [
         "bad"
-      ]
+      ],
+      "use_confidence": false,
+      "min_probability": 0.6,
+      "max_reject_probability": 0.2
     },
     "privacy": {
       "keep": [
@@ -52,7 +56,10 @@
       ],
       "reject": [
         "sensitive"
-      ]
+      ],
+      "use_confidence": true,
+      "min_probability": 0.9,
+      "max_reject_probability": 0.1
     },
     "trainability": {
       "keep": [
@@ -63,7 +70,11 @@
       ],
       "reject": [
         "unsuitable"
-      ]
+      ],
+      "use_confidence": false,
+      "min_probability": 0.7,
+      "max_reject_probability": 0.2
     }
-  }
+  },
+  "gate_notes": "Choice gates keep a row when the argmax is in `keep`, the mass on `keep` reaches `min_probability`, and the mass on `reject` stays at or under `max_reject_probability`. `use_confidence` adds Jev's own confidence field against the run's threshold; it is off for quality and trainability because that field sits near 0.5 on clearly good rows."
 }

@@ -216,6 +216,7 @@ tbody tr:last-child td { border-bottom: 0; }
 .label-row label { font-weight: 550; }
 .label-row output { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; background: #eaf2e3; color: #507b37; min-width: 44px; padding: 4px 7px; text-align: center; border-radius: 5px; font-size: 12px; }
 .range-labels { display: flex; justify-content: space-between; font-size: 11px; color: #68775d; margin-top: 1px; }
+.field-hint { font-size: 11px; line-height: 1.4; color: #68775d; margin: 4px 0 0; }
 .toggle-row { position: relative; display: flex; justify-content: space-between; align-items: center; gap: 15px; min-height: 44px; margin: 24px 0 20px; cursor: pointer; }
 .toggle-row strong { display: block; font-size: 12px; font-weight: 550; color: #49693c; }
 .toggle-row small { display: block; font-size: 11px; color: #68775d; line-height: 1.7; margin-top: 5px; }
