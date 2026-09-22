@@ -16,13 +16,13 @@ Start with a local example on an ordinary computer, then connect a JEV screening
 
 ## What does the pipeline do?
 
-| Step | What happens | What you get |
-| --- | --- | --- |
-| 1. Upload | Read JSONL / CSV, record file details, and preview the data | A reusable dataset |
-| 2. Screen | Check format, length, and exact duplicates locally; live mode also asks JEV to assess quality | Three partitions: `keep`, `review`, and `reject` |
-| 3. Evaluate data | Summarize partition counts, duplicates, errors, and JEV's decisions by dimension | A data report and per-record audit trail |
-| 4. Train | Split retained records by group, then train the configured model | Training logs, dataset splits, and model artifacts |
-| 5. Evaluate the model | Compare loss before and after training on the same held-out test set | A before/after loss and perplexity report |
+| Step                  | What happens                                                                                  | What you get                                       |
+| --------------------- | --------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| 1. Upload             | Read JSONL / CSV, record file details, and preview the data                                   | A reusable dataset                                 |
+| 2. Screen             | Check format, length, and exact duplicates locally; live mode also asks JEV to assess quality | Three partitions:`keep`, `review`, and `reject`    |
+| 3. Evaluate data      | Summarize partition counts, duplicates, errors, and JEV's decisions by dimension              | A data report and per-record audit trail           |
+| 4. Train              | Split retained records by group, then train the configured model                              | Training logs, dataset splits, and model artifacts |
+| 5. Evaluate the model | Compare loss before and after training on the same held-out test set                          | A before/after loss and perplexity report          |
 
 ```mermaid
 flowchart TD
@@ -52,6 +52,7 @@ The project includes three **starter screening rubrics**: `general`, `finance`, 
 → Read the **[Domain adaptation guide](docs/DOMAIN_GUIDE.md)** for task selection, data preparation, rubric customization, evaluation isolation, and business metrics.
 
 <a id="quickstart"></a>
+
 ## 1. Run the local demo
 
 You need **Linux or macOS, Python 3.10+, and Git**. The default demo requires no API key, GPU, or language-model download. Installing dependencies for the first time requires internet access.
@@ -74,8 +75,8 @@ Keep the terminal running and open **[http://localhost:8000](http://localhost:80
 ### Complete your first run in the browser
 
 1. Under **Prepare your data**, click **Use example** to load the bundled synthetic dataset.
-2. Leave **Screening engine** set to **Demo · Local rules**.
-3. Leave **Training backend** set to **Demo · Pipeline validation** and enable **Auto-train and evaluate**.
+2. Under **Configure your workflow**, leave **Screening engine** set to **Demo · Local rules**.
+3. Under **Configure your workflow**, leave **Training backend** set to **Demo · Pipeline validation** and enable **Auto-train and evaluate**.
 4. Click **Start workflow**, then follow the stages, partition counts, and logs under **Runs & insights**.
 5. When the run finishes, inspect **Held-out evaluation** and download results from **Artifacts & reports**.
 
@@ -84,6 +85,7 @@ The default example has 84 rows. Expect **80 kept, 2 for review, and 2 rejected*
 > Demo screening uses local rules only. Demo training really trains a small byte-bigram statistical model. It validates the workflow; **it does not demonstrate JEV's judgment quality or language-model training performance**.
 
 <a id="data"></a>
+
 ## 2. Bring your own data
 
 Drag a file into the upload area or click to choose one. Check the preview before selecting your screening and training settings.
@@ -101,17 +103,29 @@ These two rows illustrate the format only. Automatic training requires **at leas
 
 The system supports four content layouts. **Choose one per record:**
 
-| Data type | Required content fields | Typical use |
-| --- | --- | --- |
-| Plain text | `text` | Articles, passages, and domain text |
-| Instruction and answer | `instruction`, `output`; optional `input` | Instruction tuning |
-| Question and answer | `prompt`, `response` | Single-turn question answering |
-| Conversation | `messages`, with string `role` and `content` in each item | Conversation training |
+| Data type              | Required content fields                                   | Typical use                         |
+| ---------------------- | --------------------------------------------------------- | ----------------------------------- |
+| Plain text             | `text`                                                    | Articles, passages, and domain text |
+| Instruction and answer | `instruction`, `output`; optional `input`                 | Instruction tuning                  |
+| Question and answer    | `prompt`, `response`                                      | Single-turn question answering      |
+| Conversation           | `messages`, with string `role` and `content` in each item | Conversation training               |
 
 Conversation example:
 
 ```jsonl
-{"conversation_id":"chat-001","messages":[{"role":"user","content":"What should I do if a file upload fails?"},{"role":"assistant","content":"Check the file format and your network connection, then try again."}]}
+{
+  "conversation_id": "chat-001",
+  "messages": [
+    {
+      "role": "user",
+      "content": "What should I do if a file upload fails?"
+    },
+    {
+      "role": "assistant",
+      "content": "Check the file format and your network connection, then try again."
+    }
+  ]
+}
 ```
 
 Supported roles are `system`, `user`, `assistant`, and `tool`; content must currently be text. If a record mixes layouts, the selection order is `messages`, `text`, instruction/answer, then prompt/response. Do not rely on mixed fields being combined into training content.
@@ -137,6 +151,7 @@ By default, independent groups are assigned approximately **70% to training, 15%
 **Input limits:** UTF-8 files; a default browser upload limit of 1 GiB; at most 1 MiB per record; and a default content length of 8–32,000 characters. Extra fields such as `id`, source, and group identifiers remain in the local partition files.
 
 <a id="jev"></a>
+
 ## 3. Enable live JEV screening
 
 Configure a key for one of the following providers in the terminal that runs the service. If the service is already running, stop it and restart it after setting the environment variable.
@@ -163,11 +178,11 @@ For your first live API run, start with a small dataset and **disable Auto-train
 
 The default general rubric assesses content quality, apparent privacy exposure, and suitability for training. Format errors, length violations, and duplicates are handled locally first. The general and finance rubrics treat rows that differ only in whitespace as duplicates (`"dedupe": "whitespace"`); the code rubric matches exactly, because indentation inside a snippet can be the point of the row. JEV results are routed as follows:
 
-| Decision | Meaning | What happens next |
-| --- | --- | --- |
-| **Keep** | Every dimension's answer falls in its keep set and passes that dimension's gate | Eligible for the training candidate set once screening completes |
-| **Review** | A judgment is uncertain, a gate was not met, or a record / response needs checking | Written to the review file; excluded from automatic training |
-| **Reject** | At least one dimension rejects the record, or a local rejection rule applies | Written to the rejection file with a recorded reason |
+| Decision   | Meaning                                                                            | What happens next                                                |
+| ---------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| **Keep**   | Every dimension's answer falls in its keep set and passes that dimension's gate    | Eligible for the training candidate set once screening completes |
+| **Review** | A judgment is uncertain, a gate was not met, or a record / response needs checking | Written to the review file; excluded from automatic training     |
+| **Reject** | At least one dimension rejects the record, or a local rejection rule applies       | Written to the rejection file with a recorded reason             |
 
 Decision precedence is **Reject → Review → Keep**. If one dimension requests review but another rejects, the record is rejected.
 
@@ -175,12 +190,12 @@ Each dimension has its own gate, declared in the rubric. JEV returns a probabili
 
 The original upload is retained. Download `review.jsonl` for manual inspection; the workbench does not yet offer per-record annotation or automatic feedback into training. Corrected records can be uploaded as a new dataset.
 
-| Setting | Default | Meaning |
-| --- | --- | --- |
-| Confidence threshold | `0.85` | Minimum for JEV's `confidence` field on dimensions whose gate uses it (`privacy` in the bundled rubrics); it does not mean “85% of samples are correct.” Demo does not use this threshold |
-| Concurrent requests | `4` | Concurrent screening tasks; live throughput depends on provider quotas |
-| Request limit | `1000` | Maximum HTTP requests for this run, including retries; not a sample count or spending cap |
-| Model | provider alias | `model` in the API, `--model` in the CLI: pin a JEV version such as `typesafe/jev-1.13-20260917` so a run's cache holds one model's answers. `data_report.json` lists the resolved models under `models` either way |
+| Setting              | Default        | Meaning                                                                                                                                                                                                             |
+| -------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Confidence threshold | `0.85`         | Minimum for JEV's`confidence` field on dimensions whose gate uses it (`privacy` in the bundled rubrics); it does not mean “85% of samples are correct.” Demo does not use this threshold                            |
+| Concurrent requests  | `4`            | Concurrent screening tasks; live throughput depends on provider quotas                                                                                                                                              |
+| Request limit        | `1000`         | Maximum HTTP requests for this run, including retries; not a sample count or spending cap                                                                                                                           |
+| Model                | provider alias | `model` in the API, `--model` in the CLI: pin a JEV version such as `typesafe/jev-1.13-20260917` so a run's cache holds one model's answers. `data_report.json` lists the resolved models under `models` either way |
 
 A malformed JEV answer is asked for once more before the row is sent to review with the validation reason in the audit. Rows JEV never answered for are counted under `unevaluated`; when they exceed 5% of a run, the run is `complete` but not `training_ready`, and automatic training waits for a retry. Token counts and the provider's reported cost are summed under `usage`; cache hits cost nothing and are not counted.
 
@@ -191,16 +206,17 @@ Incomplete screening due to an exhausted request budget, authentication failure,
 API references: [TypeSafe API](https://docs.typesafe.ai/api), [OpenRouter decisions SDK](https://github.com/OpenRouterTeam/typescript-sdk/blob/main/src/funcs/alphaDecisionsCreate.ts). OpenRouter's decisions endpoint is currently alpha; the API and model availability may change.
 
 <a id="training"></a>
+
 ## 4. Train a language model
 
 Screening engine and training backend are independent settings. **Selecting live JEV screening does not automatically switch training to a language model.**
 
-| Goal | Screening engine | Training backend / toggle |
-| --- | --- | --- |
-| Validate the complete workflow without API charges | Demo | Demo; enable automatic training |
-| Screen and inspect data only | JEV · OpenRouter or TypeSafe | Disable automatic training |
-| Fine-tune a language model after JEV screening | JEV · OpenRouter or TypeSafe | Hugging Face · LoRA; enable automatic training |
-| Fine-tune a language model after local screening | Demo | Hugging Face · LoRA; enable automatic training |
+| Goal                                               | Screening engine             | Training backend / toggle                      |
+| -------------------------------------------------- | ---------------------------- | ---------------------------------------------- |
+| Validate the complete workflow without API charges | Demo                         | Demo; enable automatic training                |
+| Screen and inspect data only                       | JEV · OpenRouter or TypeSafe | Disable automatic training                     |
+| Fine-tune a language model after JEV screening     | JEV · OpenRouter or TypeSafe | Hugging Face · LoRA; enable automatic training |
+| Fine-tune a language model after local screening   | Demo                         | Hugging Face · LoRA; enable automatic training |
 
 ### Install dependencies and choose the target model
 
@@ -233,6 +249,7 @@ Use the [HTTP or Python API](#automation) or the CLI's training flags to adjust 
 The resulting `model/` contains **LoRA adapters and tokenizer files**. Inference still requires the original base model. See the [training guide](docs/TRAINING.md) for additional configuration and limitations.
 
 <a id="results"></a>
+
 ## 5. Read the results
 
 ### Inspect the data before interpreting model metrics
@@ -242,13 +259,13 @@ The resulting `model/` contains **LoRA adapters and tokenizer files**. Inference
 3. **Check what training actually did.** Verify split sizes, actual steps, the model used, and the truncation length.
 4. **Compare test-set metrics.** Confirm that the data and measurement units match before deciding whether to expand the experiment.
 
-| Metric | Meaning | How to read it |
-| --- | --- | --- |
-| `baseline_loss` | Test-set mean negative log likelihood before training, weighted by predicted token count | The baseline |
-| `trained_loss` | The same measurement after training on the same test set | Compare with the baseline; usually lower is better |
-| `delta_loss` | `trained_loss - baseline_loss` | Negative means lower loss; positive means higher loss |
-| `baseline_perplexity` / `trained_perplexity` | Perplexity for the corresponding model | Compare within the same evaluation setup; usually lower is better |
-| `split_counts` | Training, validation, and test row counts | Check retained data volume and the resulting split |
+| Metric                                       | Meaning                                                                                  | How to read it                                                    |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `baseline_loss`                              | Test-set mean negative log likelihood before training, weighted by predicted token count | The baseline                                                      |
+| `trained_loss`                               | The same measurement after training on the same test set                                 | Compare with the baseline; usually lower is better                |
+| `delta_loss`                                 | `trained_loss - baseline_loss`                                                           | Negative means lower loss; positive means higher loss             |
+| `baseline_perplexity` / `trained_perplexity` | Perplexity for the corresponding model                                                   | Compare within the same evaluation setup; usually lower is better |
+| `split_counts`                               | Training, validation, and test row counts                                                | Check retained data volume and the resulting split                |
 
 For example, a change from loss `2.50` to `2.30` gives `delta_loss = -0.20`. This illustrates the metric; it is not a promised training gain.
 
@@ -282,6 +299,7 @@ By default, the workbench stores data in `.jev-dataops/` under the directory whe
 Download partition files, reports, and model files under **Artifacts & reports**. Runs without training have no training artifacts. Failed runs may have only partial outputs; check the run status and report completion flags. The default run directory is included in Git's ignore rules.
 
 <a id="automation"></a>
+
 ## 6. Connect the CLI or APIs to your workflow
 
 ### Run from the command line
@@ -341,6 +359,7 @@ These parameters illustrate the request format; adjust the training scale to you
 See the running service's [Swagger documentation](http://localhost:8000/docs) for all endpoints. To call training directly or adjust batch size and split fractions, see the [Python API example](docs/TRAINING.md#python-api).
 
 <a id="scale"></a>
+
 ## 7. Work with larger datasets
 
 Streaming reads, bounded concurrency, and disk-backed SQLite deduplication and caching avoid loading the whole dataset into Python memory. **This is currently a single-host workbench:** it executes one complete run at a time, with concurrent screening inside each run. Distributed queues, object storage, and resumable chunked uploads are not implemented. The model itself must still fit in memory / VRAM.
@@ -350,24 +369,26 @@ One reproducible local benchmark screened **100,000 synthetic records in approxi
 Before scaling up, use a small sample to check the schema, screening rubric, and grouping. Then increase request budget and concurrency, followed by training steps. Improve the data based on reviewed examples from the `review` and `reject` partitions rather than retention rate alone. Reserve disk space for original uploads, partitions, audit logs, caches, training splits, and model artifacts.
 
 <a id="faq"></a>
+
 ## 8. Troubleshooting
 
-| Symptom or question | Explanation and next step |
-| --- | --- |
-| JEV is marked “Not configured” | Set the provider's key in the backend process, restart the service, and refresh. Do not enter it in the workbench access-token field |
-| Hugging Face is marked “Not installed” | Install `.[train]` in the same Python environment used to start the service, then restart |
-| A `.json` / `.xlsx` upload fails | The browser accepts `.jsonl` / `.csv`. JSONL has one object per line, not a single JSON array |
-| Too few independent groups | Retained data must contain at least 6 independent components. Shared conversations or duplicate content can join multiple rows into one group; do not change IDs merely to bypass this check |
-| A run fails or exhausts its request budget | Inspect the error and data report. Failed / cancelled browser runs can be retried using their screening cache. A retry uses the original configuration and receives a fresh request budget of the configured size |
-| I want a different threshold, budget, or training backend | Change the configuration and create a new run. Retrying does not change the original configuration, and the cache is not shared globally across all new runs |
-| Does retry resume the previous training attempt? | Screening can reuse successful cached decisions. Training starts over in a new directory such as `training-2/`; it does not restore optimizer state |
-| A repeated CLI run says training artifacts already exist | CLI screening can reuse its directory, but training does not overwrite existing artifacts. Keep previous results and use an empty directory for new training. The browser provides a simpler retry flow |
-| Training finishes quickly or visits only a few dozen records | Check `max_steps`, epochs, and actual record visits. The default 20-step limit is for workflow validation |
-| Model download fails or the device runs out of memory | Check model access and device resources. Choose a compatible model that fits, or point `JEV_BASE_MODEL` to a prepared local model directory |
-| Loss did not decrease | This can be the real result. Inspect the data, split, and training configuration, then run task evaluation. Fine-tuning gains are not guaranteed |
-| A run is marked failed after a service restart | Unfinished runs are marked interrupted. Retry to reuse the screening cache; interrupted work is never reported as completed |
+| Symptom or question                                          | Explanation and next step                                                                                                                                                                                         |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| JEV is marked “Not configured”                               | Set the provider's key in the backend process, restart the service, and refresh. Do not enter it in the workbench access-token field                                                                              |
+| Hugging Face is marked “Not installed”                       | Install`.[train]` in the same Python environment used to start the service, then restart                                                                                                                          |
+| A`.json` / `.xlsx` upload fails                              | The browser accepts`.jsonl` / `.csv`. JSONL has one object per line, not a single JSON array                                                                                                                      |
+| Too few independent groups                                   | Retained data must contain at least 6 independent components. Shared conversations or duplicate content can join multiple rows into one group; do not change IDs merely to bypass this check                      |
+| A run fails or exhausts its request budget                   | Inspect the error and data report. Failed / cancelled browser runs can be retried using their screening cache. A retry uses the original configuration and receives a fresh request budget of the configured size |
+| I want a different threshold, budget, or training backend    | Change the configuration and create a new run. Retrying does not change the original configuration, and the cache is not shared globally across all new runs                                                      |
+| Does retry resume the previous training attempt?             | Screening can reuse successful cached decisions. Training starts over in a new directory such as`training-2/`; it does not restore optimizer state                                                                |
+| A repeated CLI run says training artifacts already exist     | CLI screening can reuse its directory, but training does not overwrite existing artifacts. Keep previous results and use an empty directory for new training. The browser provides a simpler retry flow           |
+| Training finishes quickly or visits only a few dozen records | Check`max_steps`, epochs, and actual record visits. The default 20-step limit is for workflow validation                                                                                                          |
+| Model download fails or the device runs out of memory        | Check model access and device resources. Choose a compatible model that fits, or point`JEV_BASE_MODEL` to a prepared local model directory                                                                        |
+| Loss did not decrease                                        | This can be the real result. Inspect the data, split, and training configuration, then run task evaluation. Fine-tuning gains are not guaranteed                                                                  |
+| A run is marked failed after a service restart               | Unfinished runs are marked interrupted. Retry to reuse the screening cache; interrupted work is never reported as completed                                                                                       |
 
 <a id="development"></a>
+
 ## 9. Deployment, development, and scope
 
 ### Start with Docker
@@ -389,11 +410,11 @@ python -m build
 
 With `.[train]` installed, the tests also perform a real LoRA training check using a tiny local Transformer. This test does not download a model or demonstrate the business performance of any pretrained model.
 
-| Included | Not yet implemented |
-| --- | --- |
-| JSONL / CSV uploads and streaming screening | Native Excel parsing, audio quality evaluation |
+| Included                                                          | Not yet implemented                                                                          |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| JSONL / CSV uploads and streaming screening                       | Native Excel parsing, audio quality evaluation                                               |
 | JEV keep/review/reject routing, per-record audits, cached retries | Annotation workbench, semantic deduplication, accuracy calibration against human gold labels |
-| Group-aware splits, LoRA SFT, before/after loss evaluation | DPO / RLHF, multi-machine training, business benchmarks, automatic deployment |
-| Local workbench and shared access token | Tenant isolation, a complete SaaS user system |
+| Group-aware splits, LoRA SFT, before/after loss evaluation        | DPO / RLHF, multi-machine training, business benchmarks, automatic deployment                |
+| Local workbench and shared access token                           | Tenant isolation, a complete SaaS user system                                                |
 
 **License and contributions:** Source code is licensed under [MIT](LICENSE). Model weights and third-party APIs have their own terms. This is an independent community project, with no affiliation with or endorsement by TypeSafe or OpenRouter. See [CONTRIBUTING.md](CONTRIBUTING.md) to contribute and [SECURITY.md](SECURITY.md) for security reporting.
