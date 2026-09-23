@@ -1,6 +1,6 @@
 # Public browser demo
 
-**[Open the live demo](https://jev-dataops-demo.renaaaa2.chatgpt.site)**
+**[Open the live demo](https://jev-dataops.vercel.app/demo/)**
 
 Try the complete workflow on a small dataset without installing Python or configuring a model provider. Files are read and processed in the current browser tab. The demo does not upload dataset content to a server or call JEV, Hugging Face, or a cloud training service.
 

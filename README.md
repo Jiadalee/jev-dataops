@@ -2,9 +2,9 @@
 
 **A traceable pipeline for general and domain-specific data: upload → screen → evaluate data → train a model → evaluate the result.**
 
-**[Try the public browser demo](https://jev-dataops-demo.renaaaa2.chatgpt.site)** — no installation, API key, or GPU required. Click **Use example → Start workflow**, then inspect screening decisions, measured evaluation, and downloadable reports. You can also choose your own UTF-8 JSONL / CSV file (up to **2 MiB / 1,000 rows**).
+**[Website](https://jev-dataops.vercel.app/) · [Interactive demo](https://jev-dataops.vercel.app/demo/) · [Getting-started guide](https://jev-dataops.vercel.app/guide/)** — no installation, API key, or GPU required. Click **Use example → Start workflow**, then inspect screening decisions, measured evaluation, and downloadable reports. You can also choose your own UTF-8 JSONL / CSV file (up to **2 MiB / 1,000 rows**).
 
-The public demo processes files in your browser tab using local screening rules and a byte-bigram statistical model. It does not call JEV or train an LLM. Reloading clears its data and results, so download anything you need first. For domain-specific JEV screening, LoRA training, and larger datasets, use the self-hosted application below. [Demo scope and build instructions](public_demo/README.md).
+The public demo processes files in your browser tab using local screening rules and a byte-bigram statistical model. It does not call JEV or train an LLM. Reloading clears its data and results, so download anything you need first. For domain-specific JEV screening, LoRA training, and larger datasets, use the self-hosted application below. [Demo scope](public_demo/README.md) · [Website build and Vercel deployment](docs/WEBSITE.md).
 
 Start with a local example on an ordinary computer, then connect a JEV screening provider and your own language model. The project includes a browser workbench, a CLI, and Python / HTTP APIs for developers and researchers who need to answer two recurring questions: “Is this dataset worth training on?” and “What changed after training?”
 
@@ -13,6 +13,8 @@ Start with a local example on an ordinary computer, then connect a JEV screening
 **First time here?** [Run the demo](#quickstart) → [Prepare your data](#data) → [Enable JEV screening](#jev) → [Train a language model](#training) → [Read the results](#results)
 
 **More:** [Domain adaptation guide](docs/DOMAIN_GUIDE.md) · [CLI and APIs](#automation) · [Larger datasets](#scale) · [Troubleshooting](#faq) · [Deployment and development](#development)
+
+**Training environments:** [SFT → verl GRPO / PPO](docs/TRAINING_ENVIRONMENTS.md). Export screened data into a portable training bundle, inspect its launch plan, then run it in your own training environment. SFT uses the built-in LoRA trainer; GRPO and PPO use a separate, pinned verl environment with explicit reference-answer rewards.
 
 ## What does the pipeline do?
 
@@ -228,7 +230,23 @@ The default small model is intended to validate the execution path. Set `JEV_BAS
 
 **The defaults are a small validation run: 1 epoch, at most 20 training steps, batch size 4, and sequence length 256.** Sequence length counts tokenizer tokens for language models and UTF-8 bytes for Demo. Training stops at the epoch or step limit, and long records are truncated. A completed run therefore does not mean an entire large dataset was used for training. Actual steps, record visits, and losses are saved in `training_report.json`.
 
-Use the [HTTP or Python API](#automation) or the CLI's training flags to adjust parameters for a full experiment; the browser has no training-step input. Rows with a prompt (instruction/output, prompt/response, conversations ending in an assistant turn) are rendered with the tokenizer's chat template when it has one, so the adapter learns the format the model is served in, and by default only the answer tokens contribute to the loss (`loss_mask: "answer"`; `"full"` restores plain causal SFT). Bare passages are learned in full. On CUDA the frozen base is held in bfloat16; the LoRA weights stay in float32. The learning rate warms up over the first tenth of the steps and decays linearly. `training_report.json` records the masking counts, dtype, LoRA rank and alpha, and whether a chat template was used. DPO / RLHF, distributed training, and automatic model publishing are not implemented.
+Use the [HTTP or Python API](#automation) or the CLI's training flags to adjust parameters for a full experiment; the browser has no training-step input. Rows with a prompt (instruction/output, prompt/response, conversations ending in an assistant turn) are rendered with the tokenizer's chat template when it has one. The default `loss_mask: "answer"` masks an identifiable prompt prefix; rows without a usable token prefix fall back to full-text loss. Inspect the masking report. `"full"` requests plain causal SFT, and bare passages are learned in full. On compatible CUDA devices the frozen base uses bfloat16; LoRA weights stay in float32. The learning rate warms up over the first tenth of the steps and decays linearly. `training_report.json` records masking counts, dtype, LoRA rank and alpha, and chat-template use. This built-in runner is single-process; external GRPO/PPO training uses the separate verl adapter below.
+
+### Export to SFT or verl GRPO / PPO
+
+```bash
+pip install -e '.[export]'
+jev-dataops run --input examples/rl_math.jsonl --output runs/math-screen --provider demo --trainer none
+
+jev-dataops export-training \
+  --input runs/math-screen/screening/keep.jsonl \
+  --output runs/grpo-bundle --target verl-grpo \
+  --base-model Qwen/Qwen2.5-0.5B-Instruct --reward-field ground_truth
+
+jev-dataops launch-training --bundle runs/grpo-bundle --dry-run
+```
+
+Use `--target sft` for conversation JSONL or `--target verl-ppo` for PPO Parquet. RL requires an explicit, verified string answer field; the exporter removes the final assistant answer from rollout prompts and keeps prompt/content/conversation groups together. Export and dry-run do not start training. On a prepared training host, `launch-training --execute` starts the job. **The public website does not provide GPU training.** Follow the [environment setup, reward, and evaluation guide](docs/TRAINING_ENVIRONMENTS.md) before executing.
 
 The resulting `model/` contains **LoRA adapters and tokenizer files**. Inference still requires the original base model. See the [training guide](docs/TRAINING.md) for additional configuration and limitations.
 
@@ -393,7 +411,7 @@ With `.[train]` installed, the tests also perform a real LoRA training check usi
 | --- | --- |
 | JSONL / CSV uploads and streaming screening | Native Excel parsing, audio quality evaluation |
 | JEV keep/review/reject routing, per-record audits, cached retries | Annotation workbench, semantic deduplication, accuracy calibration against human gold labels |
-| Group-aware splits, LoRA SFT, before/after loss evaluation | DPO / RLHF, multi-machine training, business benchmarks, automatic deployment |
+| Group-aware splits, LoRA SFT, before/after loss evaluation; external verl GRPO/PPO bundles and local launch | DPO, managed cloud training, multi-machine orchestration, domain reward validation, automatic model deployment |
 | Local workbench and shared access token | Tenant isolation, a complete SaaS user system |
 
 **License and contributions:** Source code is licensed under [MIT](LICENSE). Model weights and third-party APIs have their own terms. This is an independent community project, with no affiliation with or endorsement by TypeSafe or OpenRouter. See [CONTRIBUTING.md](CONTRIBUTING.md) to contribute and [SECURITY.md](SECURITY.md) for security reporting.
