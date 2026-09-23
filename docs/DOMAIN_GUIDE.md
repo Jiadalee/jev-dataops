@@ -8,17 +8,17 @@ JEV DataOps provides a foundation for experiments with domain data and models: s
 
 ## 1. Define the task and success criteria
 
-The following are examples of domains and evaluations you can build. They are not integrated industry solutions:
+The following domains now have reusable task metric packs. They are starter definitions and local calculations, not integrated industry solutions. Browse the [metric catalog](https://jev-dataops.vercel.app/metrics/) or use the [metrics quickstart](METRICS.md).
 
-| Use case | Data to prepare | Domain screening criteria to add | Task metrics you can implement |
+| Use case | Data to prepare | Domain screening criteria to add | Ready-to-use metric definitions |
 | --- | --- | --- | --- |
-| Financial research | Research excerpts with sources and dates, metric explanations, question-answer pairs | Consistent numbers and units, complete metric definitions, supported conclusions | Numerical extraction accuracy, source citation accuracy, human verification |
-| Coding assistant | Code explanations, problems and proposed fixes | Answers that address the problem, explicit dependencies and runtime requirements | Independent test pass rate, successful fix rate |
-| Enterprise knowledge | Product manuals, policies, de-identified support question-answer pairs | Valid document versions, supported answers, explicit access boundaries | Answer accuracy, citation accuracy, handling of questions without supporting evidence |
-| Legal text | Authorized statutes, cases, and research question-answer pairs | Complete jurisdiction, effective-date, and citation information | Citation accuracy, task accuracy, professional review |
-| Medical literature | Authorized literature and de-identified research question-answer pairs | Clear sources, scope of applicability, and descriptions of evidence | Consistency with cited literature, task accuracy, professional review |
+| Financial research | Research excerpts with sources and dates, metric explanations, question-answer pairs | Consistent numbers and units, complete metric definitions, supported conclusions | Numeric value/unit agreement, period match, reference evidence-ID recall, supplied human support rating |
+| Coding assistant | Code explanations, problems and proposed fixes | Answers that address the problem, explicit dependencies and runtime requirements | Imported per-task test fraction, JSON syntax, supplied requirements check and maintainability rating |
+| Enterprise knowledge | Product manuals, policies, de-identified support question-answer pairs | Valid document versions, supported answers, explicit access boundaries | Reference evidence-ID precision/recall, answerability-label match, supplied groundedness rating |
+| Legal text | Authorized statutes, cases, and research question-answer pairs | Complete jurisdiction, effective-date, and citation information | Jurisdiction-label match, reference citation-ID recall, supplied applicability and scope review |
+| Medical literature | Authorized literature and de-identified research question-answer pairs | Clear sources, scope of applicability, and descriptions of evidence | Study-design and evidence-label agreement, reference evidence-ID recall, supplied support review |
 
-The built-in `general`, `finance`, and `code` rubrics all check **quality, privacy, and trainability**. The `finance` and `code` rubrics only add domain context to the instructions; they do not check external sources, execute code, or calculate the task metrics above. There are no dedicated built-in rubrics for legal, medical, or enterprise knowledge data yet. You can extend the rubrics as described below.
+The built-in `general`, `finance`, and `code` rubrics all check **quality, privacy, and trainability**. The `finance` and `code` rubrics only add domain context to the instructions; they do not check external sources, execute code, or calculate the task metrics above. The separate metric packs evaluate predictions/references and supplied annotations through `evaluate-metrics`. There are no dedicated built-in rubrics for legal, medical, or enterprise knowledge data yet. You can extend the rubrics as described below.
 
 ## 2. Turn domain materials into training records
 
@@ -107,16 +107,36 @@ For time-dependent tasks, such as checking performance on documents from a later
 
 Internal loss / perplexity measures changes before and after training on the same test set. These metrics do not replace task metrics, and Demo's byte-level metrics cannot be compared directly with an LLM's token-level metrics.
 
-## 5. Add task evaluation after model artifacts are produced
+## 5. Evaluate task predictions with a reusable metric pack
 
-Automatic evaluation currently ends at loss / perplexity. Start by extending task evaluation in a separate script:
+The automatic training stage reports loss/perplexity. For domain task evaluation,
+generate predictions from the base model and trained model on the same fixed
+external task set, then run a reusable pack against each prediction file.
 
-1. Fix a domain task set, reference answers / evidence, and evaluation rules, and record their versions.
-2. Run both the base model and the model with the LoRA adapter on the same task set with the same inference settings. The adapter is in `training-<attempt>/model/` and still requires the original base model. CLI artifacts use `training/model/` instead.
-3. Calculate the metrics required by the task and combine them with review by domain experts. Inspect results by source, subtask, difficulty, or other relevant groups so that overall averages do not hide regressions.
-4. Save both sets of predictions, metrics, rubric versions, and error examples. Use them to decide whether to add data, revise screening criteria, or adjust training. Select configurations using a validation set and keep a final evaluation set out of tuning.
+```bash
+jev-dataops init-metrics --domain enterprise --output ./enterprise-metrics
+jev-dataops evaluate-metrics \
+  --input ./enterprise-metrics/example.jsonl \
+  --pack ./enterprise-metrics/metrics.json \
+  --output ./enterprise-results
+```
 
-To integrate task evaluation into the workspace automatically, extend the run stages in [`Runner._execute()` in `runner.py`](../jev_dataops/runner.py) after `train_and_evaluate()` finishes, and save the results separately, for example as `domain_report.json`. Training and built-in report generation live in [`train_and_evaluate()` in `training.py`](../jev_dataops/training.py); web report rendering lives in [`static/app.js`](../jev_dataops/static/app.js). These are **development extension points**. There is currently no ready-made task evaluation plugin interface, task metric dashboard, or automatic deployment readiness decision.
+Replace the synthetic example with your predictions and frozen references. Each
+pack defines its required fields, types, calculation, annotation source, and
+limitations. Rename field mappings and adjust tolerances in the copied JSON;
+record a new version for every changed definition. See [the metric guide](METRICS.md)
+for the six domains, supported operators, coverage, and custom targets.
+
+The report separates missing/invalid annotations from scored rows. Citation-ID
+agreement does not verify that a document supports an answer. Imported code-test
+counts and expert ratings must come from your own test/review process. Retain
+those records alongside the model, dataset, and rubric versions.
+
+Packs do not automatically alter JEV screening, become verl rewards, or execute
+as part of the web workbench's training job. To add orchestration, call the
+metric evaluator after your inference/evidence-collection step and retain its
+report as a separate artifact. The public website provides the catalog and
+configuration downloads; it does not host model inference or expert review.
 
 ## 6. What to retain from each experiment
 

@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "domain": "enterprise",
+  "name": "Enterprise retrieval and grounded-answer evaluation",
+  "version": "1.0.0",
+  "description": "Compare cited enterprise source IDs with a curated required-source set, compare answerability labels, and aggregate independent reviews of source-grounded answers.",
+  "field_schema": {
+    "prediction.source_ids": {
+      "type": "string_array",
+      "description": "Source IDs cited or retrieved for the answer. IDs are deduplicated and compared exactly; no document contents are fetched."
+    },
+    "reference.source_ids": {
+      "type": "string_array",
+      "description": "Curated relevant/required source IDs for the same question. Define corpus snapshot and relevance policy outside this pack."
+    },
+    "prediction.answerability": {
+      "type": "string",
+      "description": "Predicted answerability label using the benchmark vocabulary, for example answerable or unanswerable."
+    },
+    "reference.answerability": {
+      "type": "string",
+      "description": "Independent answerability label for the specified corpus snapshot; do not infer it from whether the model answered."
+    },
+    "human_review.groundedness_score": {
+      "type": "integer",
+      "description": "Independent review against the authorized source snapshot, integer 0-4: 0 contradicts sources or invents the central answer; 1 contains major unsupported claims; 2 mixes supported facts with material unsupported content; 3 supports central claims with only minor omissions; 4 supports the complete answer and handles source limits explicitly. Missing source access means no review score, not zero."
+    },
+    "metadata.dataset_version": {
+      "type": "string",
+      "description": "Optional immutable dataset/split version for traceability. Not required or verified by this scorer."
+    },
+    "metadata.model_version": {
+      "type": "string",
+      "description": "Optional model/checkpoint version that produced the predictions. Not required or verified by this scorer."
+    },
+    "human_review.reviewer_id": {
+      "type": "string",
+      "description": "Optional independent reviewer identifier. The scorer does not authenticate the reviewer or validate qualifications; synthetic examples do not identify a real reviewer."
+    },
+    "human_review.rubric_version": {
+      "type": "string",
+      "description": "Optional version of the human-review instructions used to assign ratings. The scorer does not verify adherence to that rubric."
+    }
+  },
+  "metrics": [
+    {
+      "id": "source_id_precision",
+      "name": "Source-ID precision",
+      "description": "Mean fraction of predicted source IDs that belong to the curated reference set.",
+      "operator": "set_precision",
+      "fields": {
+        "prediction": "prediction.source_ids",
+        "reference": "reference.source_ids"
+      },
+      "parameters": {},
+      "unit": "fraction",
+      "direction": "higher_is_better",
+      "aggregation": "mean",
+      "evidence": "computed",
+      "limitations": "Matches supplied IDs only. It does not open sources, verify that a source exists, or establish that a citation supports the answer. This measures ID relevance under the supplied labels, not citation entailment.",
+      "target": null
+    },
+    {
+      "id": "source_id_recall",
+      "name": "Source-ID recall",
+      "description": "Mean fraction of curated required source IDs covered by the prediction.",
+      "operator": "set_recall",
+      "fields": {
+        "prediction": "prediction.source_ids",
+        "reference": "reference.source_ids"
+      },
+      "parameters": {},
+      "unit": "fraction",
+      "direction": "higher_is_better",
+      "aggregation": "mean",
+      "evidence": "computed",
+      "limitations": "Matches supplied IDs only. It does not open sources, verify that a source exists, or establish that a citation supports the answer. Recall does not penalize extra irrelevant sources.",
+      "target": null
+    },
+    {
+      "id": "answerability_accuracy",
+      "name": "Answerability-label accuracy",
+      "description": "Fraction of predicted answerability labels matching the curated label.",
+      "operator": "exact_match",
+      "fields": {
+        "prediction": "prediction.answerability",
+        "reference": "reference.answerability"
+      },
+      "parameters": {},
+      "unit": "fraction",
+      "direction": "higher_is_better",
+      "aggregation": "mean",
+      "evidence": "computed",
+      "limitations": "Labels are corpus- and task-dependent. This is not an independent check that an answer can be supported.",
+      "target": null
+    },
+    {
+      "id": "human_groundedness",
+      "name": "Human-reviewed groundedness",
+      "description": "Mean independently reviewed groundedness score normalized from 0-4 to 0-1.",
+      "operator": "rubric_score",
+      "fields": {
+        "value": "human_review.groundedness_score"
+      },
+      "parameters": {
+        "min": 0,
+        "max": 4
+      },
+      "unit": "fraction",
+      "direction": "higher_is_better",
+      "aggregation": "mean",
+      "evidence": "human",
+      "limitations": "This imports an independent review score; the engine neither performs the review nor verifies reviewer identity. Missing reviews are excluded and reduce coverage.",
+      "target": null
+    }
+  ],
+  "limitations": [
+    "This is a reusable evaluation template, not an official benchmark scorer. All targets are unset; calibrate thresholds and minimum coverage on a representative held-out dataset. Scores are not automatically used as screening gates or RL rewards.",
+    "Source-ID overlap does not prove a statement is supported; it is deliberately separate from human-reviewed groundedness.",
+    "Corpus permissions, document freshness, relevance judgments, and answerability labels must be maintained by the dataset owner.",
+    "This does not reproduce ALCE's entailment-based citation evaluation. All fixture documents and annotations are fictional.",
+    "Unused metadata and review-provenance fields are optional traceability suggestions; their presence, authenticity, and types are not validated unless a metric references them."
+  ],
+  "references": [
+    "https://github.com/princeton-nlp/ALCE"
+  ]
+}

@@ -1,0 +1,130 @@
+{
+  "schema_version": 1,
+  "domain": "legal",
+  "name": "Legal-research label and scope evaluation",
+  "version": "1.0.0",
+  "description": "For annotated legal-research benchmark records, compare jurisdiction and citation identifiers and summarize independent applicability and scope reviews.",
+  "field_schema": {
+    "prediction.jurisdiction": {
+      "type": "string",
+      "description": "Predicted jurisdiction label from the dataset's controlled vocabulary. Fictional examples use SYNTHETIC_JURISDICTION_A/B."
+    },
+    "reference.jurisdiction": {
+      "type": "string",
+      "description": "Independently curated jurisdiction label applicable to the benchmark question and source snapshot."
+    },
+    "prediction.citation_ids": {
+      "type": "string_array",
+      "description": "Citation identifiers supplied with the answer; IDs alone do not establish validity or authority."
+    },
+    "reference.citation_ids": {
+      "type": "string_array",
+      "description": "Curated required citation IDs for the item. Record date and source versions in metadata."
+    },
+    "human_review.applicability_valid": {
+      "type": "boolean",
+      "description": "Independent qualified-review annotation that the proposed authority applies to the benchmark's stated jurisdiction, date, and facts. The engine does not determine applicability or verify reviewer qualifications."
+    },
+    "human_review.scope_score": {
+      "type": "integer",
+      "description": "Independent legal-research review, integer 0-4: 0 materially misstates or exceeds the annotated rule's scope; 1 omits central applicability conditions; 2 captures some conditions but has material scope gaps; 3 respects key conditions with minor omissions; 4 accurately preserves every annotated condition, exception, and uncertainty relevant to the task. This is a benchmark annotation, not legal advice."
+    },
+    "metadata.dataset_version": {
+      "type": "string",
+      "description": "Optional immutable dataset/split version for traceability. Not required or verified by this scorer."
+    },
+    "metadata.model_version": {
+      "type": "string",
+      "description": "Optional model/checkpoint version that produced the predictions. Not required or verified by this scorer."
+    },
+    "human_review.reviewer_id": {
+      "type": "string",
+      "description": "Optional independent reviewer identifier. The scorer does not authenticate the reviewer or validate qualifications; synthetic examples do not identify a real reviewer."
+    },
+    "human_review.rubric_version": {
+      "type": "string",
+      "description": "Optional version of the human-review instructions used to assign ratings. The scorer does not verify adherence to that rubric."
+    }
+  },
+  "metrics": [
+    {
+      "id": "jurisdiction_accuracy",
+      "name": "Jurisdiction-label accuracy",
+      "description": "Fraction of predicted jurisdiction labels matching the curated reference.",
+      "operator": "exact_match",
+      "fields": {
+        "prediction": "prediction.jurisdiction",
+        "reference": "reference.jurisdiction"
+      },
+      "parameters": {},
+      "unit": "fraction",
+      "direction": "higher_is_better",
+      "aggregation": "mean",
+      "evidence": "computed",
+      "limitations": "Matching a label does not establish controlling law, current law, or legal applicability.",
+      "target": null
+    },
+    {
+      "id": "citation_id_recall",
+      "name": "Required citation-ID recall",
+      "description": "Mean fraction of curated required citation IDs present in the prediction.",
+      "operator": "set_recall",
+      "fields": {
+        "prediction": "prediction.citation_ids",
+        "reference": "reference.citation_ids"
+      },
+      "parameters": {},
+      "unit": "fraction",
+      "direction": "higher_is_better",
+      "aggregation": "mean",
+      "evidence": "computed",
+      "limitations": "Matches supplied IDs only. It does not open sources, verify that a source exists, or establish that a citation supports the answer. The metric does not verify that an authority is current, controlling, or correctly interpreted.",
+      "target": null
+    },
+    {
+      "id": "reviewed_applicability",
+      "name": "Imported applicability-review pass rate",
+      "description": "Fraction of independent applicability-review annotations that are true.",
+      "operator": "boolean",
+      "fields": {
+        "value": "human_review.applicability_valid"
+      },
+      "parameters": {},
+      "unit": "fraction",
+      "direction": "higher_is_better",
+      "aggregation": "mean",
+      "evidence": "human",
+      "limitations": "This aggregates supplied review outcomes; it does not make an applicability determination. Preserve reviewer qualifications, task facts, and source dates outside the scorer.",
+      "target": null
+    },
+    {
+      "id": "human_scope",
+      "name": "Human-reviewed legal scope",
+      "description": "Mean independently reviewed scope score normalized from 0-4 to 0-1.",
+      "operator": "rubric_score",
+      "fields": {
+        "value": "human_review.scope_score"
+      },
+      "parameters": {
+        "min": 0,
+        "max": 4
+      },
+      "unit": "fraction",
+      "direction": "higher_is_better",
+      "aggregation": "mean",
+      "evidence": "human",
+      "limitations": "This imports an independent review score; the engine neither performs the review nor verifies reviewer identity. Missing reviews are excluded and reduce coverage.",
+      "target": null
+    }
+  ],
+  "limitations": [
+    "This is a reusable evaluation template, not an official benchmark scorer. All targets are unset; calibrate thresholds and minimum coverage on a representative held-out dataset. Scores are not automatically used as screening gates or RL rewards.",
+    "This template measures supplied benchmark labels and annotations. It does not validate legal advice, establish governing law, or replace qualified review.",
+    "Reference labels and citation sets require jurisdiction-, date-, and fact-specific curation. No source-law lookup is performed.",
+    "The fixtures use fictional jurisdictions, authorities, and review annotations. These are not official LegalBench tasks or scores.",
+    "Unused metadata and review-provenance fields are optional traceability suggestions; their presence, authenticity, and types are not validated unless a metric references them."
+  ],
+  "references": [
+    "https://github.com/HazyResearch/legalbench"
+  ]
+}

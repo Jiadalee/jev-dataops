@@ -190,7 +190,8 @@ def _join(db: sqlite3.Connection, left: str, right: str) -> None:
 
 
 def _prepare_splits(source: Path, destination: Path, config: dict, progress: Progress,
-                    cancelled: Cancelled) -> dict[str, Any]:
+                    cancelled: Cancelled,
+                    extra_group_keys: Callable[[dict[str, Any]], list[str]] | None = None) -> dict[str, Any]:
     index_path = destination / "split_index.sqlite3"
     if index_path.exists():
         raise ValueError("Output directory already contains a training split index; use a new run directory.")
@@ -217,6 +218,8 @@ def _prepare_splits(source: Path, destination: Path, config: dict, progress: Pro
             state = normalize_record(row)
             # Exact content (with whitespace normalized) joins even distinct declared groups.
             keys = ["text:" + _digest(" ".join(text.split()))]
+            if extra_group_keys:
+                keys.extend(extra_group_keys(row))
             for field in ("group_id", "conversation_id"):
                 if row.get(field) is not None:
                     group = row[field]

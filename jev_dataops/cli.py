@@ -122,13 +122,81 @@ def main():
     training.add_argument("--loss-mask", choices=["answer", "full"], default="answer",
                           help="answer: learn only the response tokens; full: plain causal SFT over prompt and response")
     run.add_argument("--quiet", action="store_true", help="No progress or summary on stderr; JSON report on stdout only")
+    export = commands.add_parser("export-training", help="Export screened JSONL into an SFT or verl GRPO/PPO bundle")
+    export.add_argument("--input", type=Path, required=True, help="Retained keep.jsonl from a completed screening run")
+    export.add_argument("--output", type=Path, required=True, help="New bundle directory (must not exist)")
+    export.add_argument("--target", choices=["sft", "verl-grpo", "verl-ppo"], required=True)
+    export.add_argument("--base-model", default="Qwen/Qwen2.5-0.5B-Instruct", help="Operator-selected model ID or model directory")
+    export.add_argument("--reward-field", help="Explicit string answer field for RL exact-match reward, e.g. ground_truth")
+    export.add_argument("--n-gpus", type=int, default=1,
+                        help="GPUs on one training host; one shared dataset, one SFT DDP worker per GPU")
+    export.add_argument("--batch-size", type=int, default=4,
+                        help="Global records/prompts per training batch; divisible by --n-gpus (SFT 1-32, verl 1-4096)")
+    for flag, default in [("epochs", 1), ("max-steps", 20), ("seed", 42),
+                          ("max-seq-length", 1024), ("rollout-n", 4),
+                          ("max-prompt-length", 512), ("max-response-length", 512),
+                          ("lora-r", 8), ("lora-alpha", 16)]:
+        export.add_argument("--" + flag, type=int, default=default)
+    export.add_argument("--learning-rate", type=float, help="Defaults: SFT 2e-4, verl 1e-6")
+    export.add_argument("--loss-mask", choices=["answer", "full"], default="answer")
+    export.add_argument("--validation-fraction", type=float, default=0.15)
+    export.add_argument("--test-fraction", type=float, default=0.15)
+    launch = commands.add_parser("launch-training", help="Inspect or execute a prepared training bundle on this host")
+    launch.add_argument("--bundle", type=Path, required=True)
+    launch.add_argument("--python", help="Python interpreter in the separate training environment")
+    launch.add_argument("--output", type=Path, help="Fresh directory for training results")
+    mode = launch.add_mutually_exclusive_group()
+    mode.add_argument("--dry-run", action="store_true", help="Validate the bundle and print the command (default)")
+    mode.add_argument("--execute", action="store_true", help="Run training with the selected interpreter; may load model weights")
+    metric_domains = ("general", "finance", "code", "enterprise", "legal", "medical")
+    commands.add_parser("list-metrics", help="List reusable domain metric packs")
+    metric_init = commands.add_parser("init-metrics", help="Copy a domain metric pack and synthetic example into a fresh directory")
+    metric_init.add_argument("--domain", choices=metric_domains, required=True)
+    metric_init.add_argument("--output", type=Path, required=True)
+    metric_eval = commands.add_parser("evaluate-metrics", help="Evaluate supplied predictions and annotations locally; no model or network calls")
+    metric_eval.add_argument("--input", type=Path, required=True, help="UTF-8 JSONL predictions, references, and observations")
+    metric_eval.add_argument("--output", type=Path, required=True, help="Fresh directory for per-record scores and aggregate report")
+    metric_source = metric_eval.add_mutually_exclusive_group(required=True)
+    metric_source.add_argument("--domain", choices=metric_domains, help="Use a bundled domain metric pack")
+    metric_source.add_argument("--pack", type=Path, help="Use a customized metric pack JSON")
     args = parser.parse_args()
     if args.env_file:
         try:
             load_env_file(args.env_file)
         except OSError as exc:
             parser.error(f"cannot read {args.env_file}: {exc.strerror}")
-    if args.command == "serve":
+    if args.command in {"list-metrics", "init-metrics", "evaluate-metrics"}:
+        from .domain_metrics import evaluate_metrics, init_metric_pack, list_metric_packs
+        try:
+            if args.command == "list-metrics":
+                result = list_metric_packs()
+            elif args.command == "init-metrics":
+                result = init_metric_pack(args.domain, args.output)
+            else:
+                result = evaluate_metrics(args.input, args.output, domain=args.domain, pack_path=args.pack)
+        except (ValueError, OSError) as exc:
+            parser.exit(2, f"{exc}\n")
+        print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
+    elif args.command == "export-training":
+        from .training_export import export_training
+        config = {key: value for key, value in vars(args).items()
+                  if value is not None and key not in {"command", "env_file", "input", "output", "target", "base_model", "reward_field"}}
+        try:
+            result = export_training(args.input, args.output, target=args.target, base_model=args.base_model,
+                                     reward_field=args.reward_field, config=config)
+        except (ValueError, OSError) as exc:
+            parser.exit(2, f"{exc}\n")
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    elif args.command == "launch-training":
+        from .training_launch import launch_training
+        try:
+            result = launch_training(args.bundle, dry_run=not args.execute, python=args.python, output=args.output)
+        except (ValueError, OSError, RuntimeError) as exc:
+            parser.exit(2, f"{exc}\n")
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        if result.get("status") in {"failed", "cancelled"}:
+            parser.exit(1, "Training did not complete; inspect the reported training log.\n")
+    elif args.command == "serve":
         if args.host not in {"localhost", "127.0.0.1", "::1"} and not os.environ.get("JEV_API_TOKEN"):
             parser.error("Set JEV_API_TOKEN before binding a non-loopback address")
         import uvicorn

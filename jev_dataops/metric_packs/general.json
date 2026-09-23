@@ -1,0 +1,152 @@
+{
+  "schema_version": 1,
+  "domain": "general",
+  "name": "General answer and structured-output evaluation",
+  "version": "1.0.0",
+  "description": "Compare answers with supplied references, check JSON object syntax, and summarize separately supplied schema-validation and human-review evidence.",
+  "field_schema": {
+    "prediction.answer": {
+      "type": "string",
+      "description": "Model answer. NFC and whitespace normalization apply; case, punctuation, and articles remain significant."
+    },
+    "reference.answer": {
+      "type": "string",
+      "description": "Independent reference answer for the same held-out item. Do not fill this from the prediction."
+    },
+    "prediction.structured_output": {
+      "type": "string",
+      "description": "Serialized JSON object produced by the model. A parseable object is not proof that required fields or values are correct."
+    },
+    "checks.output_schema_valid": {
+      "type": "boolean",
+      "description": "Result imported from an independent validator against the task's explicit output schema; true means it passed. This engine does not run that schema validator."
+    },
+    "human_review.support_score": {
+      "type": "integer",
+      "description": "Independent reference-based review, integer 0-4: 0 contradicts the reference or lacks support; 1 has major unsupported claims; 2 mixes supported claims with material gaps; 3 supports the central answer with only minor gaps; 4 fully supports a complete answer within the stated task scope. Synthetic fixture scores are illustrative, not actual expert reviews."
+    },
+    "metadata.dataset_version": {
+      "type": "string",
+      "description": "Optional immutable dataset/split version for traceability. Not required or verified by this scorer."
+    },
+    "metadata.model_version": {
+      "type": "string",
+      "description": "Optional model/checkpoint version that produced the predictions. Not required or verified by this scorer."
+    },
+    "human_review.reviewer_id": {
+      "type": "string",
+      "description": "Optional independent reviewer identifier. The scorer does not authenticate the reviewer or validate qualifications; synthetic examples do not identify a real reviewer."
+    },
+    "human_review.rubric_version": {
+      "type": "string",
+      "description": "Optional version of the human-review instructions used to assign ratings. The scorer does not verify adherence to that rubric."
+    },
+    "checks.validator_version": {
+      "type": "string",
+      "description": "Optional external validator version. Traceability only; not executed or verified here."
+    },
+    "checks.schema_version": {
+      "type": "string",
+      "description": "Optional task-specific output-schema version used by the external validator. This scorer does not inspect that schema."
+    }
+  },
+  "metrics": [
+    {
+      "id": "answer_exact_match",
+      "name": "Answer exact match",
+      "description": "Fraction of evaluated answers identical to their references after NFC and whitespace normalization.",
+      "operator": "exact_match",
+      "fields": {
+        "prediction": "prediction.answer",
+        "reference": "reference.answer"
+      },
+      "parameters": {},
+      "unit": "fraction",
+      "direction": "higher_is_better",
+      "aggregation": "mean",
+      "evidence": "computed",
+      "limitations": "Case-sensitive surface agreement, not semantic correctness. Valid paraphrases can score zero; unlike official SQuAD normalization, punctuation and articles are retained.",
+      "target": null
+    },
+    {
+      "id": "answer_token_f1",
+      "name": "Answer token F1",
+      "description": "Per-item multiset F1 over whitespace-separated normalized tokens, averaged across evaluated items.",
+      "operator": "token_f1",
+      "fields": {
+        "prediction": "prediction.answer",
+        "reference": "reference.answer"
+      },
+      "parameters": {},
+      "unit": "fraction",
+      "direction": "higher_is_better",
+      "aggregation": "mean",
+      "evidence": "computed",
+      "limitations": "Lexical overlap can stay high when a crucial fact is wrong. This is not semantic similarity or the official SQuAD scorer.",
+      "target": null
+    },
+    {
+      "id": "json_object_validity",
+      "name": "JSON object syntax",
+      "description": "Fraction of submitted structured-output strings that parse as strict JSON objects.",
+      "operator": "json_valid",
+      "fields": {
+        "value": "prediction.structured_output"
+      },
+      "parameters": {
+        "required_type": "object"
+      },
+      "unit": "fraction",
+      "direction": "higher_is_better",
+      "aggregation": "mean",
+      "evidence": "computed",
+      "limitations": "Checks JSON parsing and the top-level object type only; does not check an application schema, required fields, or factual content.",
+      "target": null
+    },
+    {
+      "id": "output_schema_pass",
+      "name": "Imported output-schema pass rate",
+      "description": "Fraction of independently supplied schema-validation flags that are true.",
+      "operator": "boolean",
+      "fields": {
+        "value": "checks.output_schema_valid"
+      },
+      "parameters": {},
+      "unit": "fraction",
+      "direction": "higher_is_better",
+      "aggregation": "mean",
+      "evidence": "external",
+      "limitations": "Trust depends on the external validator, its schema version, and its execution provenance. This engine only aggregates the provided flag.",
+      "target": null
+    },
+    {
+      "id": "human_support",
+      "name": "Human-reviewed answer support",
+      "description": "Mean independently reviewed support score normalized from 0-4 to 0-1.",
+      "operator": "rubric_score",
+      "fields": {
+        "value": "human_review.support_score"
+      },
+      "parameters": {
+        "min": 0,
+        "max": 4
+      },
+      "unit": "fraction",
+      "direction": "higher_is_better",
+      "aggregation": "mean",
+      "evidence": "human",
+      "limitations": "This imports an independent review score; the engine neither performs the review nor verifies reviewer identity. Missing reviews are excluded and reduce coverage.",
+      "target": null
+    }
+  ],
+  "limitations": [
+    "This is a reusable evaluation template, not an official benchmark scorer. All targets are unset; calibrate thresholds and minimum coverage on a representative held-out dataset. Scores are not automatically used as screening gates or RL rewards.",
+    "The JSON syntax metric and imported schema metric measure different properties. Do not describe parseable JSON as schema-valid.",
+    "The included cases and review annotations are synthetic; their scores demonstrate metric behavior, not model quality.",
+    "Unused metadata and review-provenance fields are optional traceability suggestions; their presence, authenticity, and types are not validated unless a metric references them."
+  ],
+  "references": [
+    "https://arxiv.org/abs/1606.05250",
+    "https://www.rfc-editor.org/rfc/rfc8259"
+  ]
+}

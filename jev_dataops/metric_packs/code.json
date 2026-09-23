@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "domain": "code",
+  "name": "Code test evidence and maintainability evaluation",
+  "version": "1.0.0",
+  "description": "Aggregate independently executed test results, check a structured-output envelope, and summarize separately supplied requirement and maintainability reviews without executing submitted code.",
+  "field_schema": {
+    "test_results.passed": {
+      "type": "integer",
+      "description": "Nonnegative passed-test count imported from an independent isolated test runner. Must not exceed test_results.total. Keep runner version and task identity in provenance metadata."
+    },
+    "test_results.total": {
+      "type": "integer",
+      "description": "Nonnegative executed-test count from the same run. Zero executed tests is not applicable, not a successful run."
+    },
+    "prediction.structured_output": {
+      "type": "string",
+      "description": "Model-produced JSON object envelope, such as an object containing a code string. This metric parses the envelope only."
+    },
+    "checks.requirements_valid": {
+      "type": "boolean",
+      "description": "Imported independent requirement-check result for a documented task specification. This engine does not test program behavior or execute the code."
+    },
+    "human_review.maintainability_score": {
+      "type": "integer",
+      "description": "Independent code-maintenance review, integer 0-4: 0 is opaque or structurally unusable; 1 has major readability or design problems; 2 is understandable with substantial maintenance risks; 3 is clear with minor issues; 4 is clear, cohesive, and documented to the project's stated conventions. Review actual code and context separately; synthetic examples contain illustrative annotations only."
+    },
+    "metadata.dataset_version": {
+      "type": "string",
+      "description": "Optional immutable dataset/split version for traceability. Not required or verified by this scorer."
+    },
+    "metadata.model_version": {
+      "type": "string",
+      "description": "Optional model/checkpoint version that produced the predictions. Not required or verified by this scorer."
+    },
+    "human_review.reviewer_id": {
+      "type": "string",
+      "description": "Optional independent reviewer identifier. The scorer does not authenticate the reviewer or validate qualifications; synthetic examples do not identify a real reviewer."
+    },
+    "human_review.rubric_version": {
+      "type": "string",
+      "description": "Optional version of the human-review instructions used to assign ratings. The scorer does not verify adherence to that rubric."
+    },
+    "test_results.runner_version": {
+      "type": "string",
+      "description": "Optional independent test-runner and suite version. Traceability only; no run is performed or verified here."
+    }
+  },
+  "metrics": [
+    {
+      "id": "independent_test_fraction",
+      "name": "Independent test pass fraction",
+      "description": "Mean per-item passed/total ratio from imported independently executed test counts.",
+      "operator": "ratio",
+      "fields": {
+        "numerator": "test_results.passed",
+        "denominator": "test_results.total"
+      },
+      "parameters": {},
+      "unit": "fraction",
+      "direction": "higher_is_better",
+      "aggregation": "mean",
+      "evidence": "external",
+      "limitations": "No tests are executed by this engine. This is a macro average of per-item test fractions, not HumanEval pass@k, a pooled test pass rate, or proof of test completeness.",
+      "target": null
+    },
+    {
+      "id": "json_object_validity",
+      "name": "JSON envelope syntax",
+      "description": "Fraction of submitted structured-output strings that parse as strict JSON objects.",
+      "operator": "json_valid",
+      "fields": {
+        "value": "prediction.structured_output"
+      },
+      "parameters": {
+        "required_type": "object"
+      },
+      "unit": "fraction",
+      "direction": "higher_is_better",
+      "aggregation": "mean",
+      "evidence": "computed",
+      "limitations": "Parses the JSON envelope only. Code syntax, code safety, API behavior, and application-schema validity are not evaluated.",
+      "target": null
+    },
+    {
+      "id": "requirements_pass",
+      "name": "Imported requirement-check pass rate",
+      "description": "Fraction of independently supplied requirement-check flags that are true.",
+      "operator": "boolean",
+      "fields": {
+        "value": "checks.requirements_valid"
+      },
+      "parameters": {},
+      "unit": "fraction",
+      "direction": "higher_is_better",
+      "aggregation": "mean",
+      "evidence": "external",
+      "limitations": "Trust depends on an external checker and a documented task specification. A supplied true flag is not independently verified here.",
+      "target": null
+    },
+    {
+      "id": "human_maintainability",
+      "name": "Human-reviewed maintainability",
+      "description": "Mean independently reviewed maintainability score normalized from 0-4 to 0-1.",
+      "operator": "rubric_score",
+      "fields": {
+        "value": "human_review.maintainability_score"
+      },
+      "parameters": {
+        "min": 0,
+        "max": 4
+      },
+      "unit": "fraction",
+      "direction": "higher_is_better",
+      "aggregation": "mean",
+      "evidence": "human",
+      "limitations": "This imports an independent review score; the engine neither performs the review nor verifies reviewer identity. Missing reviews are excluded and reduce coverage.",
+      "target": null
+    }
+  ],
+  "limitations": [
+    "This is a reusable evaluation template, not an official benchmark scorer. All targets are unset; calibrate thresholds and minimum coverage on a representative held-out dataset. Scores are not automatically used as screening gates or RL rewards.",
+    "Submitted code and test commands are never executed by this metrics pack. Run them in your own isolated evaluator before importing results.",
+    "A high score cannot establish code security, absence of defects, or sufficient test coverage.",
+    "Fixture test counts and reviews are fabricated examples and must not be reported as executed test evidence.",
+    "Unused metadata and review-provenance fields are optional traceability suggestions; their presence, authenticity, and types are not validated unless a metric references them."
+  ],
+  "references": [
+    "https://github.com/openai/human-eval",
+    "https://www.rfc-editor.org/rfc/rfc8259"
+  ]
+}

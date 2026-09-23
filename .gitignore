@@ -17,6 +17,9 @@ checkpoints/
 *.safetensors
 *.bin
 .DS_Store
+.vercel/
 .*api-key*
 *.pem
 *.key
+.vercel
+.env*
