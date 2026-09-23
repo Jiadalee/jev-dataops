@@ -10,4 +10,6 @@ recursive-include tests *.py
 recursive-include jev_dataops/static *.html *.css *.js
 recursive-include jev_dataops/rubrics *.json
 recursive-include jev_dataops/examples *.jsonl
+recursive-include jev_dataops/metric_packs *.json
+recursive-include jev_dataops/metric_examples *.jsonl
 global-exclude __pycache__ *.py[cod] *.sqlite3* .env *.safetensors

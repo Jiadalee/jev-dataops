@@ -27,7 +27,7 @@ Repository = "https://github.com/RenaGao/jev-dataops"
 include = ["jev_dataops*"]
 
 [tool.setuptools.package-data]
-jev_dataops = ["static/*", "rubrics/*.json", "examples/*.jsonl"]
+jev_dataops = ["static/*", "rubrics/*.json", "examples/*.jsonl", "metric_packs/*.json", "metric_examples/*.jsonl"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

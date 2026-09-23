@@ -18,6 +18,8 @@ Start with a local example on an ordinary computer, then connect a JEV screening
 
 **One dataset, multiple GPUs:** upload or prepare data once, then use `--n-gpus` to launch a shared bundle on one Linux/NVIDIA host. SFT uses DDP; verl distributes GRPO/PPO through its own workers. The [multi-GPU guide](docs/MULTI_GPU.md) includes 2/4/8-GPU examples, global batch sizing, and memory requirements. The public website generates commands; actual training runs on your own host.
 
+**Ready-to-use domain metrics:** [Browse six packs](https://jev-dataops.vercel.app/metrics/) for general, finance, code, enterprise knowledge, legal research, and medical literature. Each includes definitions, typed fields, calculation rules, synthetic examples, and explicit evidence requirements. Copy a pack with `jev-dataops init-metrics` and score your own predictions with `jev-dataops evaluate-metrics`; see the [quickstart and customization guide](docs/METRICS.md).
+
 ## What does the pipeline do?
 
 | Step | What happens | What you get |
@@ -416,6 +418,7 @@ With `.[train]` installed, the tests also perform a real LoRA training check usi
 | JSONL / CSV uploads and streaming screening | Native Excel parsing, audio quality evaluation |
 | JEV keep/review/reject routing, per-record audits, cached retries | Annotation workbench, semantic deduplication, accuracy calibration against human gold labels |
 | Group-aware splits, single-node DDP LoRA SFT, before/after loss evaluation; external verl GRPO/PPO bundles and multi-GPU launch | DPO, managed cloud training, multi-machine orchestration, domain reward validation, automatic model deployment |
+| Six domain metric packs, configurable field mappings, offline task scoring and coverage reports | Automatic model inference, source verification, expert annotation, domain metrics as RL rewards |
 | Local workbench and shared access token | Tenant isolation, a complete SaaS user system |
 
 **License and contributions:** Source code is licensed under [MIT](LICENSE). Model weights and third-party APIs have their own terms. This is an independent community project, with no affiliation with or endorsement by TypeSafe or OpenRouter. See [CONTRIBUTING.md](CONTRIBUTING.md) to contribute and [SECURITY.md](SECURITY.md) for security reporting.

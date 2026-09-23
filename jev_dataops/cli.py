@@ -148,13 +148,36 @@ def main():
     mode = launch.add_mutually_exclusive_group()
     mode.add_argument("--dry-run", action="store_true", help="Validate the bundle and print the command (default)")
     mode.add_argument("--execute", action="store_true", help="Run training with the selected interpreter; may load model weights")
+    metric_domains = ("general", "finance", "code", "enterprise", "legal", "medical")
+    commands.add_parser("list-metrics", help="List reusable domain metric packs")
+    metric_init = commands.add_parser("init-metrics", help="Copy a domain metric pack and synthetic example into a fresh directory")
+    metric_init.add_argument("--domain", choices=metric_domains, required=True)
+    metric_init.add_argument("--output", type=Path, required=True)
+    metric_eval = commands.add_parser("evaluate-metrics", help="Evaluate supplied predictions and annotations locally; no model or network calls")
+    metric_eval.add_argument("--input", type=Path, required=True, help="UTF-8 JSONL predictions, references, and observations")
+    metric_eval.add_argument("--output", type=Path, required=True, help="Fresh directory for per-record scores and aggregate report")
+    metric_source = metric_eval.add_mutually_exclusive_group(required=True)
+    metric_source.add_argument("--domain", choices=metric_domains, help="Use a bundled domain metric pack")
+    metric_source.add_argument("--pack", type=Path, help="Use a customized metric pack JSON")
     args = parser.parse_args()
     if args.env_file:
         try:
             load_env_file(args.env_file)
         except OSError as exc:
             parser.error(f"cannot read {args.env_file}: {exc.strerror}")
-    if args.command == "export-training":
+    if args.command in {"list-metrics", "init-metrics", "evaluate-metrics"}:
+        from .domain_metrics import evaluate_metrics, init_metric_pack, list_metric_packs
+        try:
+            if args.command == "list-metrics":
+                result = list_metric_packs()
+            elif args.command == "init-metrics":
+                result = init_metric_pack(args.domain, args.output)
+            else:
+                result = evaluate_metrics(args.input, args.output, domain=args.domain, pack_path=args.pack)
+        except (ValueError, OSError) as exc:
+            parser.exit(2, f"{exc}\n")
+        print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
+    elif args.command == "export-training":
         from .training_export import export_training
         config = {key: value for key, value in vars(args).items()
                   if value is not None and key not in {"command", "env_file", "input", "output", "target", "base_model", "reward_field"}}

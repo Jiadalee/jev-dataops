@@ -18,10 +18,14 @@ MARKER = ".jev-website-build.json"
 SITE_FILES = (
     "index.html",
     "guide/index.html",
+    "metrics/index.html",
     "assets/site.css",
     "assets/site.js",
+    "assets/metrics.js",
+    "assets/metrics.css",
     "assets/favicon.svg",
 )
+METRIC_DOMAINS = ("general", "finance", "code", "enterprise", "legal", "medical")
 
 
 def _build_demo(destination: Path) -> None:
@@ -81,6 +85,15 @@ def build(destination: str | Path) -> Path:
             output = staging / relative
             output.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, output)
+        for domain in METRIC_DOMAINS:
+            for source_dir, destination_dir, suffix in (
+                ("metric_packs", "metric-packs", ".json"),
+                ("metric_examples", "metric-examples", ".jsonl"),
+            ):
+                source = ROOT / "jev_dataops" / source_dir / (domain + suffix)
+                output = staging / "assets" / destination_dir / source.name
+                output.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, output)
         (staging / MARKER).write_text(
             json.dumps({"project": "jev-dataops-public-website", "schema_version": 1}) + "\n",
             encoding="utf-8",
@@ -89,7 +102,7 @@ def build(destination: str | Path) -> Path:
             shutil.rmtree(target)
         staging.replace(target)
     print(f"Built JEV DataOps website at {target}")
-    print("Routes: /, /guide/, /demo/. No API or training server is deployed.")
+    print("Routes: /, /guide/, /metrics/, /demo/. No API or training server is deployed.")
     return target
 
 

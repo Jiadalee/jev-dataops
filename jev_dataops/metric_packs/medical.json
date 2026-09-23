@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "domain": "medical",
+  "name": "Biomedical research evidence-label evaluation",
+  "version": "1.0.0",
+  "description": "For annotated biomedical research records, compare study-design and evidence labels, compare supporting source IDs, and summarize independent evidence-support reviews.",
+  "field_schema": {
+    "prediction.study_design": {
+      "type": "string",
+      "description": "Predicted study-design label from the benchmark's documented vocabulary, for example observational or randomized_trial."
+    },
+    "reference.study_design": {
+      "type": "string",
+      "description": "Study-design label independently assigned from the source record. Labels are supplied to the scorer, not inferred by it."
+    },
+    "prediction.evidence_ids": {
+      "type": "string_array",
+      "description": "Evidence identifiers supplied with the research answer; no papers or patient records are retrieved."
+    },
+    "reference.evidence_ids": {
+      "type": "string_array",
+      "description": "Curated required evidence IDs for the benchmark item. Use a dated source snapshot and explicit inclusion policy."
+    },
+    "prediction.evidence_label": {
+      "type": "string",
+      "description": "Predicted task-specific evidence label, for example supports_claim, refutes_claim, or insufficient_evidence. This is not a treatment recommendation."
+    },
+    "reference.evidence_label": {
+      "type": "string",
+      "description": "Independent adjudicated evidence label under the benchmark's documented question and source scope."
+    },
+    "human_review.support_score": {
+      "type": "integer",
+      "description": "Independent qualified biomedical-research review, integer 0-4: 0 contradicts the curated evidence; 1 makes major unsupported inferences; 2 is partly supported but omits material study limits; 3 supports the central finding with minor qualification gaps; 4 supports all stated findings while preserving study design, uncertainty, and scope. No review score should be supplied without examining the source record; fixture scores are illustrative only."
+    },
+    "metadata.dataset_version": {
+      "type": "string",
+      "description": "Optional immutable dataset/split version for traceability. Not required or verified by this scorer."
+    },
+    "metadata.model_version": {
+      "type": "string",
+      "description": "Optional model/checkpoint version that produced the predictions. Not required or verified by this scorer."
+    },
+    "human_review.reviewer_id": {
+      "type": "string",
+      "description": "Optional independent reviewer identifier. The scorer does not authenticate the reviewer or validate qualifications; synthetic examples do not identify a real reviewer."
+    },
+    "human_review.rubric_version": {
+      "type": "string",
+      "description": "Optional version of the human-review instructions used to assign ratings. The scorer does not verify adherence to that rubric."
+    }
+  },
+  "metrics": [
+    {
+      "id": "study_design_accuracy",
+      "name": "Study-design label accuracy",
+      "description": "Fraction of predicted study-design labels matching independently supplied labels.",
+      "operator": "exact_match",
+      "fields": {
+        "prediction": "prediction.study_design",
+        "reference": "reference.study_design"
+      },
+      "parameters": {},
+      "unit": "fraction",
+      "direction": "higher_is_better",
+      "aggregation": "mean",
+      "evidence": "computed",
+      "limitations": "A matching design label does not evaluate study validity, risk of bias, evidence certainty, or clinical applicability.",
+      "target": null
+    },
+    {
+      "id": "evidence_id_recall",
+      "name": "Required evidence-ID recall",
+      "description": "Mean fraction of curated required evidence IDs covered by the prediction.",
+      "operator": "set_recall",
+      "fields": {
+        "prediction": "prediction.evidence_ids",
+        "reference": "reference.evidence_ids"
+      },
+      "parameters": {},
+      "unit": "fraction",
+      "direction": "higher_is_better",
+      "aggregation": "mean",
+      "evidence": "computed",
+      "limitations": "Matches supplied IDs only. It does not open sources, verify that a source exists, or establish that a citation supports the answer. The metric does not assess a study's quality or whether its findings support clinical decisions.",
+      "target": null
+    },
+    {
+      "id": "evidence_label_accuracy",
+      "name": "Evidence-label accuracy",
+      "description": "Fraction of predicted evidence labels matching the supplied adjudicated labels.",
+      "operator": "exact_match",
+      "fields": {
+        "prediction": "prediction.evidence_label",
+        "reference": "reference.evidence_label"
+      },
+      "parameters": {},
+      "unit": "fraction",
+      "direction": "higher_is_better",
+      "aggregation": "mean",
+      "evidence": "computed",
+      "limitations": "Agreement is conditional on the benchmark's label policy and references. It is not independent medical factual verification or a patient-level outcome metric.",
+      "target": null
+    },
+    {
+      "id": "human_support",
+      "name": "Human-reviewed research support",
+      "description": "Mean independently reviewed evidence-support score normalized from 0-4 to 0-1.",
+      "operator": "rubric_score",
+      "fields": {
+        "value": "human_review.support_score"
+      },
+      "parameters": {
+        "min": 0,
+        "max": 4
+      },
+      "unit": "fraction",
+      "direction": "higher_is_better",
+      "aggregation": "mean",
+      "evidence": "human",
+      "limitations": "This imports an independent review score; the engine neither performs the review nor verifies reviewer identity. Missing reviews are excluded and reduce coverage.",
+      "target": null
+    }
+  ],
+  "limitations": [
+    "This is a reusable evaluation template, not an official benchmark scorer. All targets are unset; calibrate thresholds and minimum coverage on a representative held-out dataset. Scores are not automatically used as screening gates or RL rewards.",
+    "For research-record evaluation only. This pack does not establish clinical validity, medical safety, or suitability for diagnosis or treatment.",
+    "Study labels and review annotations need qualified independent curation. The scorer does not grade evidence certainty or retrieve research papers.",
+    "The examples contain fictional study IDs, claims, and review annotations, with no patient information. This is not the official PubMedQA evaluation.",
+    "Unused metadata and review-provenance fields are optional traceability suggestions; their presence, authenticity, and types are not validated unless a metric references them."
+  ],
+  "references": [
+    "https://github.com/pubmedqa/pubmedqa"
+  ]
+}

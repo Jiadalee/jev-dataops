@@ -1,0 +1,148 @@
+{
+  "schema_version": 1,
+  "domain": "finance",
+  "name": "Financial numeric and source-grounding evaluation",
+  "version": "1.0.0",
+  "description": "Evaluate a reported financial value together with its declared unit and period, then summarize reference-evidence coverage and independent human support annotations.",
+  "field_schema": {
+    "prediction.value": {
+      "type": "number",
+      "description": "Finite reported numeric value, before any scoring. Extract it under a documented parsing protocol."
+    },
+    "reference.value": {
+      "type": "number",
+      "description": "Independently verified finite numeric reference for the same question, unit, and period."
+    },
+    "prediction.unit": {
+      "type": "string",
+      "description": "Explicit unit identifier, for example USD_million. Must exactly match the reference unit; no currency, percentage, or scale conversion is performed."
+    },
+    "reference.unit": {
+      "type": "string",
+      "description": "Verified unit identifier using the same vocabulary as prediction.unit."
+    },
+    "prediction.period": {
+      "type": "string",
+      "description": "Predicted reporting-period identifier, for example FY2025. Fiscal/calendar semantics must be resolved by the dataset author."
+    },
+    "reference.period": {
+      "type": "string",
+      "description": "Verified reporting-period identifier for the item."
+    },
+    "prediction.evidence_ids": {
+      "type": "string_array",
+      "description": "Unique or repeated source identifiers cited in the answer; repetitions are deduplicated."
+    },
+    "reference.evidence_ids": {
+      "type": "string_array",
+      "description": "Independent set of required supporting source IDs. An empty set is not applicable for recall; a missing field is missing evidence."
+    },
+    "human_review.support_score": {
+      "type": "integer",
+      "description": "Independent financial-data review, integer 0-4: 0 contradicts supplied evidence; 1 has a major unsupported calculation or claim; 2 is partly supported but omits material assumptions; 3 supports the central result with minor explanation gaps; 4 supports the result, assumptions, units, and period completely. This is a research annotation, not financial advice or an audit opinion."
+    },
+    "metadata.dataset_version": {
+      "type": "string",
+      "description": "Optional immutable dataset/split version for traceability. Not required or verified by this scorer."
+    },
+    "metadata.model_version": {
+      "type": "string",
+      "description": "Optional model/checkpoint version that produced the predictions. Not required or verified by this scorer."
+    },
+    "human_review.reviewer_id": {
+      "type": "string",
+      "description": "Optional independent reviewer identifier. The scorer does not authenticate the reviewer or validate qualifications; synthetic examples do not identify a real reviewer."
+    },
+    "human_review.rubric_version": {
+      "type": "string",
+      "description": "Optional version of the human-review instructions used to assign ratings. The scorer does not verify adherence to that rubric."
+    }
+  },
+  "metrics": [
+    {
+      "id": "value_unit_accuracy",
+      "name": "Value and unit accuracy",
+      "description": "Fraction with identical declared units and numeric absolute error no greater than 0.01 of that unit.",
+      "operator": "numeric_tolerance",
+      "fields": {
+        "prediction": "prediction.value",
+        "reference": "reference.value",
+        "prediction_unit": "prediction.unit",
+        "reference_unit": "reference.unit"
+      },
+      "parameters": {
+        "absolute_tolerance": 0.01,
+        "relative_tolerance": 0
+      },
+      "unit": "fraction",
+      "direction": "higher_is_better",
+      "aggregation": "mean",
+      "evidence": "computed",
+      "limitations": "The 0.01 absolute tolerance is an explicit starter setting, not a universal financial standard. Calibrate it for rounding and unit scale; no conversion or arithmetic derivation is performed.",
+      "target": null
+    },
+    {
+      "id": "reporting_period_accuracy",
+      "name": "Reporting-period accuracy",
+      "description": "Fraction of reporting-period labels matching the supplied reference.",
+      "operator": "exact_match",
+      "fields": {
+        "prediction": "prediction.period",
+        "reference": "reference.period"
+      },
+      "parameters": {},
+      "unit": "fraction",
+      "direction": "higher_is_better",
+      "aggregation": "mean",
+      "evidence": "computed",
+      "limitations": "Label agreement does not verify fiscal-calendar definitions, reporting revisions, or whether the value came from that period.",
+      "target": null
+    },
+    {
+      "id": "evidence_id_recall",
+      "name": "Required evidence-ID recall",
+      "description": "Mean fraction of independently required evidence IDs present in the prediction.",
+      "operator": "set_recall",
+      "fields": {
+        "prediction": "prediction.evidence_ids",
+        "reference": "reference.evidence_ids"
+      },
+      "parameters": {},
+      "unit": "fraction",
+      "direction": "higher_is_better",
+      "aggregation": "mean",
+      "evidence": "computed",
+      "limitations": "Matches supplied IDs only. It does not open sources, verify that a source exists, or establish that a citation supports the answer. Extra unsupported citations are not penalized by recall.",
+      "target": null
+    },
+    {
+      "id": "human_support",
+      "name": "Human-reviewed financial support",
+      "description": "Mean independently reviewed support score normalized from 0-4 to 0-1.",
+      "operator": "rubric_score",
+      "fields": {
+        "value": "human_review.support_score"
+      },
+      "parameters": {
+        "min": 0,
+        "max": 4
+      },
+      "unit": "fraction",
+      "direction": "higher_is_better",
+      "aggregation": "mean",
+      "evidence": "human",
+      "limitations": "This imports an independent review score; the engine neither performs the review nor verifies reviewer identity. Missing reviews are excluded and reduce coverage.",
+      "target": null
+    }
+  ],
+  "limitations": [
+    "This is a reusable evaluation template, not an official benchmark scorer. All targets are unset; calibrate thresholds and minimum coverage on a representative held-out dataset. Scores are not automatically used as screening gates or RL rewards.",
+    "Numeric, unit, and period checks remain separate signals; this pack does not issue a financial correctness or release verdict.",
+    "This is not FinQA execution accuracy or program accuracy. No financial calculation program is executed.",
+    "All example entities, source IDs, and review annotations are synthetic.",
+    "Unused metadata and review-provenance fields are optional traceability suggestions; their presence, authenticity, and types are not validated unless a metric references them."
+  ],
+  "references": [
+    "https://github.com/czyssrs/FinQA"
+  ]
+}

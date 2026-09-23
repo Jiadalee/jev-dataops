@@ -8,6 +8,7 @@ workbench and training services.
 | `/` | Project overview, workflow, domain examples, and training paths |
 | `/demo/` | Interactive browser-only demo |
 | `/guide/` | Getting-started and training-bundle guide |
+| `/metrics/` | Six domain metric packs, definitions, typed fields, and downloads |
 
 ## Build and preview locally
 
@@ -56,7 +57,7 @@ CLI and the existing project selected, deploy from the repository root:
 vercel --prod
 ```
 
-Verify `/`, `/guide/`, and `/demo/` on the reported production URL. The config
+Verify `/`, `/guide/`, `/metrics/`, and `/demo/` on the reported production URL. The config
 also sets trailing slashes and response security headers. No serverless function
 or Python API is included.
 
@@ -64,7 +65,7 @@ or Python API is included.
 
 [`.vercelignore`](../.vercelignore) denies files by default and allows only the
 website sources, the two builders, demo frontend/runtime files, the MIT license,
-and one intentionally synthetic example dataset. It excludes credentials,
+six public metric packs and their synthetic JSONL examples, and the synthetic demo dataset. It excludes credentials,
 `.env` files, virtual environments, uploaded data, run outputs, model weights,
 and the Python backend. Keep this allowlist explicit when adding public assets.
 
@@ -84,3 +85,8 @@ After production deployment succeeds, add a domain in the existing Vercel
 project's Domains settings and apply the DNS records Vercel provides. A custom
 domain is optional. The website uses root-relative routes and needs no source
 changes when its domain changes.
+
+The metrics catalog fetches definitions from `/assets/metric-packs/` and offers
+synthetic inputs from `/assets/metric-examples/`. The builder and Vercel allowlist
+name each published file explicitly. Real evaluation inputs and reports remain
+on the machine running the metrics CLI; the catalog does not upload or score them.
