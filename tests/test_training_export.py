@@ -135,3 +135,38 @@ def test_sft_and_rl_reuse_the_same_split_assignment(tmp_path):
     for split, rows in read_sft(sft).items():
         rl_rows = pq.read_table(rl / manifest["data"][split]).to_pylist()
         assert {row["id"] for row in rows} == {row["extra_info"]["id"] for row in rl_rows}
+
+
+@pytest.mark.parametrize("target", ["sft", "verl-grpo", "verl-ppo"])
+def test_gpu_count_does_not_duplicate_or_resplit_uploaded_data(tmp_path, target):
+    if target != "sft":
+        pytest.importorskip("pyarrow")
+    path = source(tmp_path)
+    exports = []
+    for count in (1, 2, 4, 8):
+        bundle = tmp_path / f"{target}-{count}"
+        manifest = export_training(path, bundle, target=target,
+                                   reward_field="ground_truth" if target != "sft" else None,
+                                   config={"n_gpus": count, "batch_size": 8})
+        assert manifest["config"]["n_gpus"] == count
+        assert len(list((bundle / "data").iterdir())) == 3
+        exports.append({split: file_sha256(bundle / relative) for split, relative in manifest["data"].items()})
+    assert all(item == exports[0] for item in exports)
+
+
+def test_multi_gpu_requires_complete_global_batch(tmp_path):
+    path = source(tmp_path)
+    with pytest.raises(ValueError, match="divisible"):
+        export_training(path, tmp_path / "invalid-batch", target="sft", config={"n_gpus": 8, "batch_size": 4})
+    with pytest.raises(ValueError, match="smaller than global batch_size"):
+        export_training(path, tmp_path / "too-few-rows", target="sft", config={"n_gpus": 8, "batch_size": 32})
+    assert not (tmp_path / "too-few-rows").exists()
+
+
+def test_verl_accepts_global_batch_larger_than_local_sft_limit(tmp_path):
+    pytest.importorskip("pyarrow")
+    rows = [{"instruction": f"What is {i} plus 1?", "output": str(i + 1), "ground_truth": str(i + 1)} for i in range(128)]
+    manifest = export_training(source(tmp_path, rows), tmp_path / "large-batch", target="verl-grpo",
+                               reward_field="ground_truth", config={"n_gpus": 8, "batch_size": 64})
+    assert manifest["config"]["batch_size"] == 64
+    assert manifest["split_counts"]["train"] >= 64

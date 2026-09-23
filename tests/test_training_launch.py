@@ -77,6 +77,53 @@ def test_dry_run_is_portable_and_does_not_spawn_or_create_outputs(tmp_path, monk
         assert overrides["trainer.total_training_steps"] == "1"
         assert overrides["trainer.test_freq"] == "1"
         assert overrides["trainer.save_freq"] == "1"
+        assert overrides["data.val_batch_size"] == "4"
+
+
+def test_multi_gpu_sft_uses_isolated_torchrun_workers_without_probing(tmp_path, monkeypatch):
+    bundle, manifest = bundle_fixture(tmp_path)
+    manifest["config"].update(n_gpus=2, batch_size=4)
+    save_manifest(bundle, manifest)
+    monkeypatch.setattr(launch, "_probe", lambda *a, **k: pytest.fail("Dry run must not probe GPUs."))
+    plan = launch.launch_training(bundle)
+    command = plan["command"]
+    assert command[:4] == [sys.executable, "-I", "-m", "torch.distributed.run"]
+    assert "--standalone" in command and "--nnodes=1" in command and "--nproc-per-node=2" in command
+    worker = command[command.index("--no-python") + 1:]
+    assert worker[:4] == [sys.executable, "-I", "-m", "jev_dataops.training_distributed"]
+    assert worker[-2:] == ["--backend", "nccl"]
+    assert plan["distribution"] == "single_node_ddp" and plan["global_batch_size"] == 4
+    assert not (bundle / "results").exists()
+    with pytest.raises(ValueError, match="distributed launcher"):
+        launch.run_sft_bundle(bundle, bundle / "results")
+
+
+@pytest.mark.parametrize("target", ["sft", "verl-grpo", "verl-ppo"])
+def test_global_batch_must_divide_devices_and_fit_training_split(tmp_path, target):
+    bundle, manifest = bundle_fixture(tmp_path, target)
+    manifest["config"].update(n_gpus=2, batch_size=3)
+    save_manifest(bundle, manifest)
+    with pytest.raises(ValueError, match="divisible"):
+        launch.launch_training(bundle)
+    manifest["config"]["batch_size"] = 8
+    save_manifest(bundle, manifest)
+    with pytest.raises(ValueError, match="at least batch_size"):
+        launch.launch_training(bundle)
+
+
+def test_multi_gpu_preflight_rejects_missing_cuda_before_creating_output(tmp_path, monkeypatch):
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("transformers")
+    pytest.importorskip("peft")
+    if sys.platform == "linux" and torch.cuda.device_count() >= 2:
+        pytest.skip("This test verifies missing CUDA devices on a CPU host.")
+    bundle, manifest = bundle_fixture(tmp_path)
+    manifest["config"].update(n_gpus=2, batch_size=4)
+    save_manifest(bundle, manifest)
+    monkeypatch.setenv("JEV_TRAIN_DEVICE", "auto")
+    with pytest.raises(RuntimeError, match="Linux|CUDA devices"):
+        launch.launch_training(bundle, dry_run=False)
+    assert not (bundle / "results").exists()
 
 
 def test_checksum_and_reward_code_tampering_fail_closed(tmp_path):

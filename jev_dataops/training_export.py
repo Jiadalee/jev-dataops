@@ -89,7 +89,12 @@ def export_training(input_path: Path, output_dir: Path, *, target: str,
         raise ValueError("The explicitly relative local base_model directory does not exist.")
     options = dict(config or {})
     options.setdefault("learning_rate", 0.000001 if target != "sft" else 0.0002)
-    validated = validate_training_config({**options, "trainer": "demo"})
+    is_rl = target != "sft"
+    batch_size = _integer(options, "batch_size", 4, 1, 4096 if is_rl else 32)
+    # The workbench caps its local mini-batches at 32. verl's global prompt
+    # batch can be larger and is validated separately from that local runner.
+    validated = validate_training_config({**options, "trainer": "demo", "batch_size": min(batch_size, 32)})
+    validated["batch_size"] = batch_size
     validated.pop("trainer")
     validated.update({
         "n_gpus": _integer(options, "n_gpus", 1, 1, 64),
@@ -97,15 +102,14 @@ def export_training(input_path: Path, output_dir: Path, *, target: str,
         "max_prompt_length": _integer(options, "max_prompt_length", 512, 16, 32768),
         "max_response_length": _integer(options, "max_response_length", 512, 16, 32768),
     })
-    is_rl = target != "sft"
     if is_rl and (not isinstance(reward_field, str) or not reward_field.strip()):
         raise ValueError("RL export requires --reward-field naming an explicit, verified answer field.")
     if is_rl and reward_field in {"text", "_state", "_split_group"}:
         raise ValueError("The reward field is reserved for training preparation; copy verified answers to ground_truth or another metadata field.")
     if target == "verl-grpo" and validated["rollout_n"] < 2:
         raise ValueError("GRPO requires at least 2 rollout responses per prompt.")
-    if is_rl and validated["batch_size"] % validated["n_gpus"]:
-        raise ValueError("RL batch_size must be divisible by n_gpus.")
+    if validated["batch_size"] % validated["n_gpus"]:
+        raise ValueError("Global batch_size must be divisible by n_gpus; use at least one record per GPU.")
     if is_rl:
         try:
             import pyarrow as pa
@@ -131,8 +135,8 @@ def export_training(input_path: Path, output_dir: Path, *, target: str,
         splits = root / "splits"
         splits.mkdir()
         info = _prepare_splits(source, splits, validated, None, None, extra_group_keys=_prompt_group)
-        if is_rl and info["split_counts"]["train"] < validated["batch_size"]:
-            raise ValueError("RL training split is smaller than batch_size; lower --batch-size or add data.")
+        if (is_rl or validated["n_gpus"] > 1) and info["split_counts"]["train"] < validated["batch_size"]:
+            raise ValueError("Training split is smaller than global batch_size; lower --batch-size or add data.")
         info["strategy"] += " plus normalized prompt identity"
         data = bundle / "data"
         data.mkdir()

@@ -48,6 +48,34 @@ for (const list of document.querySelectorAll('[role="tablist"]')) {
   });
 }
 
+const gpuControl = document.getElementById("gpu-count-control");
+if (gpuControl) {
+  function updateGPUCommands() {
+    const selected = Number(gpuControl.querySelector('input[name="training-gpus"]:checked')?.value);
+    const count = [1, 2, 4, 8].includes(selected) ? selected : 1;
+    const batch = count * 4;
+    for (const command of document.querySelectorAll("[data-gpu-command]")) {
+      command.textContent = command.textContent
+        .replace(/--n-gpus \d+/, `--n-gpus ${count}`)
+        .replace(/--batch-size \d+/, `--batch-size ${batch}`);
+    }
+    const workers = document.getElementById("gpu-workers");
+    workers.replaceChildren();
+    workers.setAttribute("aria-label", `${count} GPU ${count === 1 ? "worker" : "workers"} on one host`);
+    for (let index = 1; index <= count; index++) {
+      const worker = document.createElement("span");
+      worker.className = "gpu-worker";
+      worker.textContent = `GPU ${index}`;
+      workers.append(worker);
+    }
+    document.getElementById("gpu-plan-summary").textContent =
+      `${count} ${count === 1 ? "GPU" : "GPUs"} · global batch ${batch}. ` +
+      `SFT: 4 records per GPU. verl: ${batch} prompts per global batch, before rollout expansion.`;
+  }
+  gpuControl.addEventListener("change", updateGPUCommands);
+  updateGPUCommands();
+}
+
 let toastTimer;
 function announce(message) {
   const toast = document.getElementById("site-toast");

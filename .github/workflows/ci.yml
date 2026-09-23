@@ -37,4 +37,4 @@ jobs:
           python-version: '3.12'
       - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
       - run: pip install -e '.[dev,train]'
-      - run: pytest -q tests/test_training.py tests/test_training_launch.py
+      - run: pytest -q tests/test_training.py tests/test_training_launch.py tests/test_training_distributed.py

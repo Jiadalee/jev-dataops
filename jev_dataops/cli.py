@@ -128,8 +128,12 @@ def main():
     export.add_argument("--target", choices=["sft", "verl-grpo", "verl-ppo"], required=True)
     export.add_argument("--base-model", default="Qwen/Qwen2.5-0.5B-Instruct", help="Operator-selected model ID or model directory")
     export.add_argument("--reward-field", help="Explicit string answer field for RL exact-match reward, e.g. ground_truth")
-    for flag, default in [("epochs", 1), ("max-steps", 20), ("batch-size", 4), ("seed", 42),
-                          ("max-seq-length", 1024), ("n-gpus", 1), ("rollout-n", 4),
+    export.add_argument("--n-gpus", type=int, default=1,
+                        help="GPUs on one training host; one shared dataset, one SFT DDP worker per GPU")
+    export.add_argument("--batch-size", type=int, default=4,
+                        help="Global records/prompts per training batch; divisible by --n-gpus (SFT 1-32, verl 1-4096)")
+    for flag, default in [("epochs", 1), ("max-steps", 20), ("seed", 42),
+                          ("max-seq-length", 1024), ("rollout-n", 4),
                           ("max-prompt-length", 512), ("max-response-length", 512),
                           ("lora-r", 8), ("lora-alpha", 16)]:
         export.add_argument("--" + flag, type=int, default=default)

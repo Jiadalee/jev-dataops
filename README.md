@@ -16,6 +16,8 @@ Start with a local example on an ordinary computer, then connect a JEV screening
 
 **Training environments:** [SFT → verl GRPO / PPO](docs/TRAINING_ENVIRONMENTS.md). Export screened data into a portable training bundle, inspect its launch plan, then run it in your own training environment. SFT uses the built-in LoRA trainer; GRPO and PPO use a separate, pinned verl environment with explicit reference-answer rewards.
 
+**One dataset, multiple GPUs:** upload or prepare data once, then use `--n-gpus` to launch a shared bundle on one Linux/NVIDIA host. SFT uses DDP; verl distributes GRPO/PPO through its own workers. The [multi-GPU guide](docs/MULTI_GPU.md) includes 2/4/8-GPU examples, global batch sizing, and memory requirements. The public website generates commands; actual training runs on your own host.
+
 ## What does the pipeline do?
 
 | Step | What happens | What you get |
@@ -363,6 +365,8 @@ See the running service's [Swagger documentation](http://localhost:8000/docs) fo
 
 Streaming reads, bounded concurrency, and disk-backed SQLite deduplication and caching avoid loading the whole dataset into Python memory. **This is currently a single-host workbench:** it executes one complete run at a time, with concurrent screening inside each run. Distributed queues, object storage, and resumable chunked uploads are not implemented. The model itself must still fit in memory / VRAM.
 
+For parallel training on that host, export a shared bundle and launch [multi-GPU SFT or verl](docs/MULTI_GPU.md) through the CLI. SFT uses one model replica per GPU; the current vLLM rollout configuration also requires each model replica to fit on one GPU. The external verl dataset loader has its own host-memory and cache requirements; the streaming guarantees above describe JEV's data-processing path.
+
 One reproducible local benchmark screened **100,000 synthetic records in approximately 16 seconds, with peak process memory of approximately 39 MiB**. Cache and audit writes are committed in groups of 500 rows or once a second rather than once per row, the cache runs in WAL mode, and each screening worker keeps one TLS connection to the provider open across requests. This measures local rules and the disk pipeline, not JEV API throughput or language-model training speed. See the [benchmark notes](docs/BENCHMARKS.md) for the environment, training steps, and reproduction commands.
 
 Before scaling up, use a small sample to check the schema, screening rubric, and grouping. Then increase request budget and concurrency, followed by training steps. Improve the data based on reviewed examples from the `review` and `reject` partitions rather than retention rate alone. Reserve disk space for original uploads, partitions, audit logs, caches, training splits, and model artifacts.
@@ -411,7 +415,7 @@ With `.[train]` installed, the tests also perform a real LoRA training check usi
 | --- | --- |
 | JSONL / CSV uploads and streaming screening | Native Excel parsing, audio quality evaluation |
 | JEV keep/review/reject routing, per-record audits, cached retries | Annotation workbench, semantic deduplication, accuracy calibration against human gold labels |
-| Group-aware splits, LoRA SFT, before/after loss evaluation; external verl GRPO/PPO bundles and local launch | DPO, managed cloud training, multi-machine orchestration, domain reward validation, automatic model deployment |
+| Group-aware splits, single-node DDP LoRA SFT, before/after loss evaluation; external verl GRPO/PPO bundles and multi-GPU launch | DPO, managed cloud training, multi-machine orchestration, domain reward validation, automatic model deployment |
 | Local workbench and shared access token | Tenant isolation, a complete SaaS user system |
 
 **License and contributions:** Source code is licensed under [MIT](LICENSE). Model weights and third-party APIs have their own terms. This is an independent community project, with no affiliation with or endorsement by TypeSafe or OpenRouter. See [CONTRIBUTING.md](CONTRIBUTING.md) to contribute and [SECURITY.md](SECURITY.md) for security reporting.

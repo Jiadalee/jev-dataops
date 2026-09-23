@@ -68,13 +68,14 @@ def _config(manifest: dict) -> dict:
     config["learning_rate"] = float(rate)
     if config["loss_mask"] not in ("answer", "full"):
         raise ValueError("loss_mask must be answer or full.")
+    if config["batch_size"] % config["n_gpus"]:
+        raise ValueError("Global batch_size must be divisible by n_gpus.")
+    if manifest["target"] != "sft" or config["n_gpus"] > 1:
+        if manifest["split_counts"]["train"] < config["batch_size"]:
+            raise ValueError("Distributed training requires at least batch_size training rows (drop_last=True).")
     if manifest["target"] != "sft":
-        if config["batch_size"] % config["n_gpus"]:
-            raise ValueError("verl batch_size must be divisible by n_gpus.")
         if manifest["target"] == "verl-grpo" and config["rollout_n"] < 2:
             raise ValueError("GRPO requires rollout_n >= 2 to compare responses within a prompt group.")
-        if manifest["split_counts"]["train"] < config["batch_size"]:
-            raise ValueError("The verl training split must contain at least batch_size prompts (drop_last=True).")
     return config
 
 
@@ -193,6 +194,7 @@ def _rl_overrides(manifest: dict, output: str, python: str, model: str | None = 
         "data.train_files": str(bundle / manifest["data"]["train"]) if bundle else manifest["data"]["train"],
         "data.val_files": str(bundle / manifest["data"]["validation"]) if bundle else manifest["data"]["validation"],
         "data.train_batch_size": config["batch_size"],
+        "data.val_batch_size": config["batch_size"],
         "data.max_prompt_length": config["max_prompt_length"],
         "data.max_response_length": config["max_response_length"],
         "data.truncation": "error",
@@ -274,13 +276,15 @@ def write_launch_files(directory: Path, manifest: dict) -> dict[str, str]:
         paths["reward"] = "rewards.py"
     if any((directory / relative).exists() for relative in paths.values()):
         raise ValueError("Launch artifacts already exist; export into a fresh directory.")
+    distributed_sft = manifest["target"] == "sft" and _config(manifest)["n_gpus"] > 1
     recipe = {
         "schema_version": 1, "status": "prepared", "target": manifest["target"],
-        "entrypoint": "jev_dataops.training_launch" if manifest["target"] == "sft" else "verl.trainer.main_ppo",
+        "entrypoint": ("jev_dataops.training_distributed" if distributed_sft else "jev_dataops.training_launch") if manifest["target"] == "sft" else "verl.trainer.main_ppo",
         "config": _config(manifest), "data": manifest["data"],
         "execution": "Use jev-dataops launch-training; default is dry-run. Explicit execution stays synchronous on your own host.",
         "evaluation": "SFT compares fixed held-out test losses; verl periodically evaluates only validation, never test.",
         "gpu_validation": "No GPU execution was performed when preparing this bundle.",
+        "distribution": "single-node DDP; batch_size is global" if distributed_sft else "single-process SFT" if manifest["target"] == "sft" else "single-node verl FSDP; batch_size is global",
     }
     if manifest["target"] != "sft":
         recipe.update({"verl_version": VERL_VERSION,
@@ -293,13 +297,25 @@ def write_launch_files(directory: Path, manifest: dict) -> dict[str, str]:
 
 
 _ENV_PROBE = r'''
-import importlib.metadata, importlib.util, json, platform, sys
+import importlib.metadata, importlib.util, json, os, platform, sys
 target, expected, n_gpus = sys.argv[1], sys.argv[2], int(sys.argv[3])
 modules = ("torch", "transformers", "peft", "jev_dataops") if target == "sft" else ("torch", "transformers", "verl", "vllm")
 missing = [name for name in modules if importlib.util.find_spec(name) is None]
 if missing:
     raise RuntimeError("Missing training dependencies: " + ", ".join(missing))
 result = {"python": sys.executable, "python_version": platform.python_version(), "platform": sys.platform}
+if target == "sft" and n_gpus > 1:
+    import torch
+    import torch.distributed as dist
+    if sys.platform != "linux":
+        raise RuntimeError("Multi-GPU SFT requires Linux with CUDA/NCCL.")
+    if os.environ.get("JEV_TRAIN_DEVICE", "auto") not in ("auto", "cuda"):
+        raise RuntimeError("Multi-GPU SFT requires JEV_TRAIN_DEVICE=auto or cuda.")
+    if not torch.cuda.is_available() or torch.cuda.device_count() < n_gpus:
+        raise RuntimeError("Requested CUDA devices are unavailable for multi-GPU SFT.")
+    if not dist.is_available() or not dist.is_nccl_available():
+        raise RuntimeError("Multi-GPU SFT requires the PyTorch NCCL backend.")
+    result.update(cuda_devices=torch.cuda.device_count(), torch=torch.__version__, backend="nccl", world_size=n_gpus)
 if target != "sft":
     if sys.platform != "linux" or sys.version_info[:2] != (3, 12):
         raise RuntimeError("The pinned verl adapter requires Linux and Python 3.12.")
@@ -371,7 +387,13 @@ def launch_training(bundle: Path, *, dry_run: bool = True, python: str | None = 
     if destination.exists():
         raise ValueError("Training output already exists; choose a fresh output directory.")
     config = _config(manifest)
-    if manifest["target"] == "sft":
+    distributed_sft = manifest["target"] == "sft" and config["n_gpus"] > 1
+    if distributed_sft:
+        command = [interpreter, "-I", "-m", "torch.distributed.run", "--standalone", "--nnodes=1", "--local-addr=127.0.0.1",
+                   f"--nproc-per-node={config['n_gpus']}", "--max-restarts=0", "--no-python",
+                   interpreter, "-I", "-m", "jev_dataops.training_distributed",
+                   "--bundle", str(directory), "--output", str(destination), "--backend", "nccl"]
+    elif manifest["target"] == "sft":
         command = [interpreter, "-I", "-m", "jev_dataops.training_launch", "_sft",
                    "--bundle", str(directory), "--output", str(destination)]
     else:
@@ -381,6 +403,8 @@ def launch_training(bundle: Path, *, dry_run: bool = True, python: str | None = 
         "schema_version": 1, "status": "prepared", "dry_run": bool(dry_run),
         "target": manifest["target"], "bundle": str(directory), "output": str(destination),
         "command": command, "cwd": str(directory), "shell": False,
+        "n_gpus": config["n_gpus"], "global_batch_size": config["batch_size"],
+        "distribution": "single_node_ddp" if distributed_sft else "single_process" if manifest["target"] == "sft" else "single_node_verl",
         "test_split_used_by_training": False,
         "evaluation": "held-out baseline/final test NLL" if manifest["target"] == "sft" else "baseline and periodic validation reward; final test remains reserved",
         "gpu_validated": False,
@@ -428,7 +452,7 @@ def launch_training(bundle: Path, *, dry_run: bool = True, python: str | None = 
             status = "failed"
         result = {**plan, "status": status, "returncode": returncode,
                   "finished_at": datetime.now(timezone.utc).isoformat(),
-                  "gpu_validated": manifest["target"] != "sft" and returncode == 0,
+                  "gpu_validated": (manifest["target"] != "sft" or distributed_sft) and status == "completed",
                   "result_scope": "Local subprocess exit status; consult actual training reports/checkpoints and logs. No test reward is fabricated."}
         _write_json(destination / "launch_report.json", result)
         return result
@@ -439,10 +463,10 @@ def launch_training(bundle: Path, *, dry_run: bool = True, python: str | None = 
         raise
 
 
-def run_sft_bundle(bundle: Path, output: Path) -> dict:
-    """Internal child-process entrypoint: use fixed exported splits without repartitioning."""
+def prepare_sft_bundle(bundle: Path, output: Path) -> tuple[dict, dict, dict]:
+    """Normalize fixed splits once, with a disk-backed cross-split group check."""
     from .screening import normalize_record
-    from .training import _huggingface, _json_file, _perplexity, _rows, _text, validate_training_config
+    from .training import _rows, _text, validate_training_config
 
     directory, destination = Path(bundle).resolve(), Path(output).resolve()
     manifest = load_bundle(directory)
@@ -454,6 +478,7 @@ def run_sft_bundle(bundle: Path, output: Path) -> dict:
         raise ValueError("SFT output artifacts already exist.")
     config = validate_training_config({**manifest.get("config", {}), "trainer": "demo"})
     config.update(trainer="huggingface", base_model=manifest["base_model"])
+    config["n_gpus"] = _config(manifest)["n_gpus"]
     counts = {split: 0 for split in SPLITS}
     index = destination / "group_check.sqlite3"
     db = sqlite3.connect(index)
@@ -479,7 +504,14 @@ def run_sft_bundle(bundle: Path, output: Path) -> dict:
     finally:
         db.close()
         index.unlink(missing_ok=True)
-    report = _huggingface(destination, config, progress=lambda event: print(json.dumps(event), flush=True), cancelled=None)
+    return manifest, config, counts
+
+
+def write_sft_report(bundle: Path, output: Path, manifest: dict, config: dict, counts: dict, report: dict) -> dict:
+    """Write final metrics only after at least one real optimizer update."""
+    from .training import _json_file, _perplexity
+
+    directory, destination = Path(bundle).resolve(), Path(output).resolve()
     if report.get("steps", 0) < 1:
         raise ValueError("No trainable answer tokens produced an optimizer step; shorten prompts or increase max_seq_length.")
     report.update({
@@ -495,6 +527,17 @@ def run_sft_bundle(bundle: Path, output: Path) -> dict:
     _json_file(destination / "training_report.json", report)
     _json_file(destination / "model_report.json", {key: value for key, value in report.items() if key != "loss_history"})
     return report
+
+
+def run_sft_bundle(bundle: Path, output: Path) -> dict:
+    """Internal single-process entrypoint: use fixed splits without repartitioning."""
+    from .training import _huggingface
+
+    if _config(load_bundle(Path(bundle)))["n_gpus"] != 1:
+        raise ValueError("Multi-GPU SFT must use the distributed launcher.")
+    manifest, config, counts = prepare_sft_bundle(bundle, output)
+    report = _huggingface(Path(output), config, progress=lambda event: print(json.dumps(event), flush=True), cancelled=None)
+    return write_sft_report(bundle, output, manifest, config, counts, report)
 
 
 def main() -> None:

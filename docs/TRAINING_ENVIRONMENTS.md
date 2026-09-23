@@ -17,6 +17,12 @@ Use the locally hosted workbench or CLI to process data, then launch training on
 your own machine. The built-in web workflow runs Demo or Hugging Face SFT; the
 external verl recipes below use the CLI.
 
+For one upload shared by 2, 4, or 8 GPUs, follow the [multi-GPU guide](MULTI_GPU.md).
+Set `--n-gpus` at export and a global `--batch-size` divisible by that count.
+Multi-GPU SFT uses DDP on one Linux/NVIDIA host; the web workbench's automatic
+SFT path remains single-process. Export and launch through the CLI for multi-GPU
+execution. The current launcher does not configure multiple machines.
+
 ## 1. Screen data before exporting
 
 Run these commands from a checkout of this repository in a Python virtual
@@ -289,6 +295,12 @@ node; these flags do not configure a multi-node cluster. Prompts longer than the
 configured limit fail rather than being silently truncated. A compatible chat
 template and SafeTensors base-model weights are required.
 
+Validation uses the configured global batch size, rather than loading the entire
+validation split into one batch. verl's dataset loader maintains its own cache
+and index; plan for its host-memory and disk requirements. The supplied vLLM
+rollout configuration uses tensor parallel size 1, so each rollout replica must
+fit on one GPU even when the training job uses several GPUs.
+
 Only the training partition is used for updates. The validation partition is
 available for in-training validation; **the test partition is excluded from the
 verl training launch**. Preserve it for a final, separate evaluation with a fixed
@@ -303,6 +315,7 @@ directory and result path. The selected interpreter must exist, but a dry run do
 not check its installed GPU libraries, download a model, or start a process.
 `--execute` performs runtime checks before launching. For RL it checks the pinned
 versions and available CUDA devices, resolves the model, and checks its tokenizer.
+Multi-GPU SFT checks Linux, NCCL, and the requested number of visible CUDA devices.
 It may download model assets; `JEV_MODEL_LOCAL_ONLY=1` requires already cached or
 local assets.
 
